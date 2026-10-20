@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Study Reader (prototype)",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Reads web pages and full PDFs aloud or as an interruptible two-host discussion, finds passages by meaning, and quizzes you, with a local usage log for study-mode comparisons. Works with Claude, Gemini, or OpenAI.",
   "permissions": [
     "sidePanel",

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2
+- Fixed: Sam's lines were sometimes spoken in Maya's voice. Speaker labels from the AI are now
+  read reliably ("B", "Sam", "Host B", etc.), and a script with every line on one host alternates.
+- Settings warns when Voice 1 and Voice 2 are the same, or only one voice is installed.
+- Prompt versions bumped (podcast-v2, ask-discussion-v2) for the clearer speaker instructions.
+
 ## 0.5.1
 - Interrupting in podcast mode now gets a short discussion between the two hosts (3 to 6 turns,
   in both voices) instead of a single narrator. Maya picks up your question, Sam follows up with

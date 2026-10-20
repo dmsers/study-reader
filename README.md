@@ -5,7 +5,7 @@ It reads a page aloud, or turns it into a two-host podcast discussion you can in
 questions. It also finds passages on a page by meaning and quizzes you on what you just learned.
 It works with Claude, Gemini, or OpenAI.
 
-> **Status: early prototype (v0.5.1), shared privately for feedback.** It works end to end in
+> **Status: early prototype (v0.5.2), shared privately for feedback.** It works end to end in
 > Chrome on macOS. The quality of the AI output across subjects and models hasn't been
 > systematically tested yet; that's what testers are helping with.
 

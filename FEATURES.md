@@ -1,6 +1,6 @@
 # Study Reader: Feature Guide
 
-A complete guide to every feature in Study Reader (v0.5.1): what it does, how to use it, and
+A complete guide to every feature in Study Reader (v0.5.2): what it does, how to use it, and
 what to expect. For installation, see the [README](README.md#install-for-testers).
 
 **Contents**
@@ -318,6 +318,9 @@ Natural-sounding voices are listed first. On a Mac, the best ones are free downl
 System Settings → Accessibility → Spoken Content → System Voice → **Manage Voices**, then pick
 voices marked *Premium* or *Enhanced* (Ava, Zoe and Evan are good). Chrome's "Google" voices are
 also available.
+
+If both hosts sound the same, check that Voice 1 and Voice 2 are different; Settings shows a
+warning when they match, or when only one voice is installed.
 
 If you hear nothing, check that your computer isn't muted.
 

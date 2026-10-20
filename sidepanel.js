@@ -10,7 +10,7 @@ const DEFAULT_OPENAI_MODEL = "gpt-6-luna";
 const DEFAULT_OPENAI_BASE = "https://api.openai.com/v1";
 // Bump a version whenever its prompt changes, so logged results can be compared fairly.
 const PROMPT_VERSIONS = {
-  podcast: "podcast-v1", quiz: "quiz-v2", ask: "ask-v1", askDiscussion: "ask-discussion-v1", summary: "summary-v1",
+  podcast: "podcast-v2", quiz: "quiz-v2", ask: "ask-v1", askDiscussion: "ask-discussion-v2", summary: "summary-v1",
 };
 const SESSION = crypto.randomUUID(); // one per time the panel is opened
 
@@ -595,6 +595,15 @@ function populateVoices() {
     voices.some((v) => v.name === want) ? want : ((voices[idx] || voices[0] || {}).name || "");
   $("voiceA").value = pick(settings.voiceA, 0);
   $("voiceB").value = pick(settings.voiceB, 1);
+  checkVoices();
+}
+// The hosts only sound different if they use different voices.
+function checkVoices() {
+  const same = voices.length > 0 && $("voiceA").value === $("voiceB").value;
+  $("voiceWarn").hidden = !same;
+  $("voiceWarn").textContent = voices.length < 2
+    ? "Only one voice is available, so both podcast hosts will sound the same. Add voices in System Settings → Accessibility → Spoken Content → Manage Voices."
+    : "Voice 1 and Voice 2 are the same, so both podcast hosts will sound alike. Pick a different Voice 2.";
 }
 function voiceFor(speaker) {
   const name = $(speaker === "B" ? "voiceB" : "voiceA").value;
@@ -604,6 +613,7 @@ for (const id of ["voiceA", "voiceB"]) {
   $(id).onchange = () => {
     settings[id] = $(id).value;
     chrome.storage.local.set({ [id]: settings[id] });
+    checkVoices();
   };
 }
 $("testVoices").onclick = async () => {
@@ -913,6 +923,28 @@ async function openai(system, user, maxTokens, json) {
   };
 }
 
+// Models don't always label speakers exactly as asked: they may write "Sam", "Host B", "b", or
+// put every line under one host. Map labels reliably so each line gets the right voice.
+function normalizeTurns(turns) {
+  const label = (x) => {
+    const v = String(x ?? "").trim().toLowerCase();
+    if (/^(b|2)$|\bsam\b|(host|speaker)[\s_-]*b\b/.test(v)) return "B";
+    if (/^(a|1)$|\bmaya\b|(host|speaker)[\s_-]*a\b/.test(v)) return "A";
+    return null;
+  };
+  const out = (Array.isArray(turns) ? turns : [])
+    .map((t) => ({
+      speaker: label(t && (t.speaker ?? t.host ?? t.name ?? t.role)),
+      text: String((t && (t.text ?? t.line ?? t.content)) || "").trim(),
+    }))
+    .filter((t) => t.text);
+  // Unrecognized label: take turns with whoever spoke last.
+  out.forEach((t, i) => { if (!t.speaker) t.speaker = i === 0 ? "A" : out[i - 1].speaker === "A" ? "B" : "A"; });
+  // Every line on one host isn't a conversation: alternate.
+  if (out.length > 1 && out.every((t) => t.speaker === out[0].speaker)) out.forEach((t, i) => { t.speaker = i % 2 ? "B" : "A"; });
+  return out;
+}
+
 function parseJSONArray(raw) {
   const start = raw.indexOf("["), end = raw.lastIndexOf("]");
   if (start < 0 || end < 0) throw new Error("Model didn't return JSON.");
@@ -933,17 +965,18 @@ async function startPodcast() {
       ? `The listener was looking for: "${focus}". Center the discussion on how these passages relate to that, ` +
         "and compare them if there are several.\n\n"
       : "";
-    const turns = await askJSON(
+    const turns = normalizeTurns(await askJSON(
       "You write short two-host podcast scripts from material on a web page or textbook. " +
       "Host A (Maya) explains clearly; host B (Sam) asks the questions a curious listener would ask and offers everyday examples. " +
       "Stay faithful to the material. If either host adds something not in it, they say so out loud (e.g. 'this goes beyond the text, but…'). " +
       "No sound effects, no stage directions. 12 to 20 turns, each one to three sentences. " +
-      'Output ONLY a JSON array: [{"speaker":"A","text":"..."},{"speaker":"B","text":"..."}]',
+      'Output ONLY a JSON array: [{"speaker":"A","text":"..."},{"speaker":"B","text":"..."}]. ' +
+      'In "speaker", use exactly "A" for Maya and "B" for Sam.',
       intro + "Material:\n\n" + sourceText,
       3000
-    );
+    ));
     queue = turns.flatMap((t) =>
-      sentences(t.text).map((s) => ({ speaker: t.speaker === "B" ? "B" : "A", text: s }))
+      sentences(t.text).map((s) => ({ speaker: t.speaker, text: s }))
     );
     const wait = Math.round((Date.now() - t0) / 100) / 10;
     logEvent("podcast_generated",
@@ -1085,7 +1118,7 @@ $("ask").onclick = async () => {
 
     let items, transcript;
     if (style === "discussion") {
-      const turns = await askJSON(
+      const turns = normalizeTurns(await askJSON(
         "A listener just interrupted your two-host educational podcast with a question. " +
         "Write a short exchange of 3 to 6 turns in which the hosts discuss it together. " +
         "Host A (Maya) explains clearly; host B (Sam) asks follow-ups and offers everyday examples. " +
@@ -1095,12 +1128,13 @@ $("ask").onclick = async () => {
         (wasActive
           ? "End with one short line leading back to where they were in the discussion. "
           : "End naturally; do not mention returning to an earlier discussion. ") +
-        'Output ONLY a JSON array: [{"speaker":"A","text":"..."},{"speaker":"B","text":"..."}]',
+        'Output ONLY a JSON array: [{"speaker":"A","text":"..."},{"speaker":"B","text":"..."}]. ' +
+      'In "speaker", use exactly "A" for Maya and "B" for Sam.',
         context + `Listener's question: ${q}`,
         1200
-      );
+      ));
       items = turns.flatMap((t) =>
-        sentences(t.text).map((x) => ({ speaker: t.speaker === "B" ? "B" : "A", text: x, podcast: true })));
+        sentences(t.text).map((x) => ({ speaker: t.speaker, text: x, podcast: true })));
       transcript = turns.map((t) => `${t.speaker === "B" ? "Sam" : "Maya"}: ${t.text}`).join("\n");
     } else {
       const answer = await ai(

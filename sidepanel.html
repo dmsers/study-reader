@@ -64,6 +64,8 @@
   .muted, .note { color:var(--muted); font-size:12px; }
   .note { margin:2px 0 4px 22px; }
   label.check { display:flex; align-items:center; gap:6px; color:var(--fg); font-size:13px; margin-top:12px; }
+  .warnNote { color:var(--warn); font-size:12px; margin-top:4px; }
+  .warnNote[hidden] { display:none; }
   button.danger { color:var(--warn); border-color:var(--warn); }
   .q .level { font-size:11px; color:var(--muted); margin:2px 0 4px; text-transform:capitalize; }
   details > summary { cursor:pointer; font-weight:600; }
@@ -189,6 +191,7 @@
     <label>Voice 2 (Sam in podcasts)
       <select id="voiceB" style="width:100%"></select>
     </label>
+    <div id="voiceWarn" class="warnNote" hidden></div>
     <label>Speech rate
       <input id="rate" type="range" min="0.7" max="1.6" step="0.05">
     </label>
