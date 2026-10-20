@@ -442,6 +442,9 @@ function parseJSONArray(raw) {
 }
 
 // ---------- podcast ----------
+// TODO (see TODO.md, "Speed: podcast discussion"): if the timing log shows wait time grows
+// with input size, split long passages into pieces, start playing the first piece's script
+// right away, and write the rest in the background.
 async function startPodcast() {
   lastMode = "podcast";
   const t0 = Date.now();

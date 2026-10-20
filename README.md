@@ -103,6 +103,9 @@ copyrighted textbook pages.
 
 ## Roadmap ideas
 
+Development checks and to-dos are tracked in [TODO.md](TODO.md). First up: confirming whether
+long passages are what slow the podcast down, and if so, splitting them so audio starts sooner.
+
 - Voice input for interruptions
 - Optional web search to enrich answers
 - Figure and diagram explanations
