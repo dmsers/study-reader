@@ -24,7 +24,7 @@
   #status.err { color:var(--warn); }
   #now { border-left:3px solid var(--accent); padding:4px 8px; margin-top:8px; min-height:1.4em; }
   #now .who { font-weight:600; }
-  #preview, #frames { font-size:12px; color:var(--muted); white-space:pre-wrap; max-height:120px; overflow:auto; border:1px solid var(--line); border-radius:6px; padding:6px; margin-top:6px; }
+  #preview, #frames, #timings { font-size:12px; color:var(--muted); white-space:pre-wrap; max-height:120px; overflow:auto; border:1px solid var(--line); border-radius:6px; padding:6px; margin-top:6px; }
   #answer { margin-top:8px; white-space:pre-wrap; }
   .result { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:8px; margin:8px 0; }
   .result .label { font-weight:600; }
@@ -122,6 +122,9 @@
     <div class="row"><button id="save">Save settings</button><button id="testVoices">Test voices</button></div>
     <h2>Debug: frames found</h2>
     <div id="frames">(grab or find first)</div>
+    <h2>Debug: recent AI timings</h2>
+    <div id="timings">(none yet)</div>
+    <div class="row"><button id="copyTimings">Copy timings</button></div>
   </details>
 
   <script src="sidepanel.js"></script>

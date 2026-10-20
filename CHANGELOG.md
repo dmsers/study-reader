@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2
+- Every AI request is timed and logged with provider and model (Settings → Debug → Recent AI
+  timings), with a Copy timings button for feedback.
+- When a podcast is ready, the status line shows the total wait, e.g. "16 turns in 9.2s".
+
 ## 0.3.1
 - Status line shows a running timer and the provider name while the AI is working.
 

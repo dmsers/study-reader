@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Study Reader (prototype)",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Reads what's on screen aloud or as an interruptible two-host discussion, finds related passages by meaning, and quizzes you. Works with Claude or Gemini.",
   "permissions": [
     "sidePanel",

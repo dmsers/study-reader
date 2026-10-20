@@ -16,7 +16,18 @@ paste copyrighted textbook text or screenshots.
 
 **What happened?**
 
+**Speed** (especially Podcast discussion)
+- How long did the podcast take to start? The status line shows it when ready, e.g.
+  "Discussion ready: 16 turns in 9.2s".
+- Was the wait acceptable, borderline, or too long?
+- Paste your timings: **Settings → Debug → Copy timings**.
+
+```
+(paste timings here)
+```
+
 **Ratings** (1 = poor, 5 = great)
+- Speed (time until the podcast or answer started):
 - Accuracy (said only true things, stayed with the material):
 - Helpfulness for understanding:
 - Quiz quality (tested understanding, not just recall):

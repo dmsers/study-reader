@@ -317,22 +317,63 @@ async function ai(system, user, maxTokens = 2000, json = false) {
   };
   tick();
   const timer = setInterval(tick, 1000);
+  let ok = false;
   try {
-    return settings.provider === "gemini"
+    const out = settings.provider === "gemini"
       ? await gemini(system, user, maxTokens, json)
       : await claude(system, user, maxTokens);
+    ok = true;
+    return out;
   } finally {
     clearInterval(timer);
+    logTiming(base.replace(/…$/, "").trim() || "AI request", (Date.now() - started) / 1000, ok, user.length);
   }
 }
 
+// ---------- timing log (Settings → Debug), for speed feedback ----------
+function modelName() {
+  return settings.provider === "gemini"
+    ? settings.geminiModel || DEFAULT_GEMINI_MODEL
+    : settings.model || DEFAULT_MODEL;
+}
+async function logTiming(task, secs, ok, inputChars) {
+  const entry = {
+    at: new Date().toISOString(), task, provider: providerName(), model: modelName(),
+    secs: Math.round(secs * 10) / 10, ok, inputChars,
+  };
+  const { timings = [] } = await chrome.storage.local.get("timings");
+  timings.unshift(entry);
+  timings.length = Math.min(timings.length, 30);
+  await chrome.storage.local.set({ timings });
+  renderTimings(timings);
+}
+function renderTimings(timings) {
+  $("timings").textContent = timings.length
+    ? timings.map((t) => {
+        const d = new Date(t.at);
+        const when = `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+        return `${when}  ${t.provider} ${t.model}  ${t.task}: ${t.secs}s${t.ok ? "" : " (failed)"}` +
+          `  [${t.inputChars.toLocaleString()} chars in]`;
+      }).join("\n")
+    : "(none yet)";
+}
+$("copyTimings").onclick = async () => {
+  try {
+    await navigator.clipboard.writeText($("timings").textContent);
+    status("Timings copied. Paste them into your feedback.");
+  } catch (e) {
+    status("Couldn't copy: select the text in the box and copy it by hand.", true);
+  }
+};
+
 // Asks for a JSON array; if the reply doesn't parse, asks once more.
 async function askJSON(system, user, maxTokens) {
+  const task = $("status").textContent.replace(/ \([^()]*\d+s\)$/, "").replace(/…$/, "");
   const raw = await ai(system, user, maxTokens, true);
   try {
     return parseJSONArray(raw);
   } catch {
-    status("The reply wasn't in the expected format; asking again…");
+    status(`${task}, retrying…`);
     const retry = await ai(
       system + " Your previous reply was not valid JSON. Reply with the JSON array only, nothing else.",
       user, maxTokens, true
@@ -403,6 +444,7 @@ function parseJSONArray(raw) {
 // ---------- podcast ----------
 async function startPodcast() {
   lastMode = "podcast";
+  const t0 = Date.now();
   status("Writing the discussion…");
   $("play").disabled = true;
   try {
@@ -422,7 +464,8 @@ async function startPodcast() {
     queue = turns.flatMap((t) =>
       sentences(t.text).map((s) => ({ speaker: t.speaker === "B" ? "B" : "A", text: s }))
     );
-    status(`Discussion ready: ${turns.length} turns.`);
+    const wait = Math.round((Date.now() - t0) / 100) / 10;
+    status(`Discussion ready: ${turns.length} turns in ${wait}s (${providerName()} · ${modelName()}).`);
     play();
   } catch (e) {
     status("Podcast failed: " + e.message, true);
@@ -531,7 +574,7 @@ $("ask").onclick = async () => {
   if (!q) return;
   const wasActive = playing || (pos > 0 && pos < queue.length);
   pausePlayback();
-  status("Thinking…");
+  status("Answering your question…");
   $("ask").disabled = true;
   try {
     const where = queue[pos] ? queue[pos].text : "";
@@ -626,3 +669,4 @@ $("quiz").onclick = async () => {
 // ---------- init ----------
 loadSettings();
 chrome.storage.local.get("stats").then(({ stats }) => renderStats(stats));
+chrome.storage.local.get("timings").then(({ timings = [] }) => renderTimings(timings));

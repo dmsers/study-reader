@@ -5,7 +5,7 @@ It reads a page aloud, or turns it into a two-host podcast discussion you can in
 questions. It also finds passages on a page by meaning and quizzes you on what you just learned.
 It works with Claude or Gemini.
 
-> **Status: early prototype (v0.3.1), shared privately for feedback.** It works end to end in
+> **Status: early prototype (v0.3.2), shared privately for feedback.** It works end to end in
 > Chrome on macOS. The quality of the AI output across subjects and models hasn't been
 > systematically tested yet; that's what testers are helping with.
 
@@ -72,11 +72,15 @@ Read-aloud works without a key. The podcast, Find, questions and quizzes need on
 
 Please open an issue using the **Feedback** template, or just send me notes. Most useful:
 
-1. **Accuracy:** did the podcast or the answers say anything wrong or not in the material?
-2. **Usefulness:** did the podcast help you understand, or was it filler?
-3. **Quizzes:** did they test understanding, or just recall?
-4. **Sites:** which pages worked or failed to capture? (Settings → Debug shows what was found.)
-5. **Claude vs. Gemini:** if you tried both, which did you prefer, and why?
+1. **Speed, especially the podcast:** how long until it started talking, and was that acceptable?
+   The extension times every AI request. Use **Settings → Debug → Copy timings** and paste the
+   result into your feedback.
+2. **Accuracy:** did the podcast or the answers say anything wrong or not in the material?
+3. **Usefulness:** did the podcast help you understand, or was it filler?
+4. **Quizzes:** did they test understanding, or just recall?
+5. **Sites:** which pages worked or failed to capture? (Settings → Debug shows what was found.)
+6. **Claude vs. Gemini:** if you tried both, which was faster, which was better, and is the
+   trade-off worth it?
 
 Please use material you're allowed to share when reporting problems: no screenshots of
 copyrighted textbook pages.
