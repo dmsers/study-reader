@@ -67,7 +67,7 @@ const SR_COLUMNS = [
   // capture / listening
   "source", "blocks", "items", "played", "fraction",
   // podcast / quiz
-  "promptVersion", "turns", "quizId", "questions", "listenFraction", "q", "level", "correct", "msToAnswer",
+  "promptVersion", "style", "turns", "quizId", "questions", "listenFraction", "q", "level", "correct", "msToAnswer",
   // verbose-only
   "question", "options", "chosen", "correctAnswer", "explanation", "answer", "script", "quiz", "summary",
 ];

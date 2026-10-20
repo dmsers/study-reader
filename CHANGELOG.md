@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.1
+- Interrupting in podcast mode now gets a short discussion between the two hosts (3 to 6 turns,
+  in both voices) instead of a single narrator. Maya picks up your question, Sam follows up with
+  an example, and they lead back into the podcast, which resumes where it left off.
+- Regular reading keeps the single, direct answer.
+- Questions are logged with their answer style (`style`: discussion or single) and prompt
+  version; Statistics shows how many questions were answered each way.
+
 ## 0.5.0
 - OpenAI provider, plus any OpenAI-compatible server (OpenRouter, Groq, local Ollama/LM Studio)
   via an editable server address. Default model gpt-6-luna.

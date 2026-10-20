@@ -5,7 +5,7 @@ It reads a page aloud, or turns it into a two-host podcast discussion you can in
 questions. It also finds passages on a page by meaning and quizzes you on what you just learned.
 It works with Claude, Gemini, or OpenAI.
 
-> **Status: early prototype (v0.5.0), shared privately for feedback.** It works end to end in
+> **Status: early prototype (v0.5.1), shared privately for feedback.** It works end to end in
 > Chrome on macOS. The quality of the AI output across subjects and models hasn't been
 > systematically tested yet; that's what testers are helping with.
 
@@ -22,8 +22,9 @@ For step-by-step instructions on every feature, see the **[Feature Guide](FEATUR
 
 - **Two ways to listen:** plain read-aloud using the computer's built-in voices (free, local),
   or a **podcast discussion** in which two AI hosts talk through the material.
-- **Interrupt anytime:** ask a question mid-playback. You get a spoken answer with an example,
-  then playback resumes where it left off.
+- **Interrupt anytime:** ask a question mid-playback. In podcast mode the two hosts discuss your
+  question together; in regular reading you get a direct answer. Then playback resumes where it
+  left off.
 - **Whole PDFs:** reads every page of a PDF, even when a course site's viewer only loads a few
   pages at a time, and lets you pick a page range.
 - **Find on page:** describe what you're looking for in plain language and get ranked matching
@@ -127,6 +128,7 @@ reading on identical material.
 | `level`, `correct`, `msToAnswer` | Bloom's level, whether answered correctly, ms from quiz shown to answer |
 | `listenFraction` | Share of the material heard in that mode before the quiz |
 | `promptVersion` | Version of the prompt that produced the podcast, quiz, or answer |
+| `style`, `turns` | Questions: answered as a host `discussion` or a `single` answer; turns in a podcast or discussion |
 | `task`, `secs`, `ok`, `error` | AI requests: what, how long, success, error text |
 | `inputChars`, `inputTokens`, `outputTokens`, `reasoningTokens`, `totalTokens` | AI request size and tokens as reported by the provider |
 | `question`, `options`, `chosen`, `correctAnswer`, `explanation` | Verbose only: quiz content |

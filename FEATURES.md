@@ -1,6 +1,6 @@
 # Study Reader: Feature Guide
 
-A complete guide to every feature in Study Reader (v0.5.0): what it does, how to use it, and
+A complete guide to every feature in Study Reader (v0.5.1): what it does, how to use it, and
 what to expect. For installation, see the [README](README.md#install-for-testers).
 
 **Contents**
@@ -162,12 +162,22 @@ Ask a question at any point, like raising your hand in a lecture.
 *"Can you give an example?"*, *"Explain that more simply"*, *"How does this relate to
 reliability?"*
 
-**What happens:**
+**What happens depends on your listening mode:**
+
+*Podcast discussion:* the two hosts take your question together, like a call-in show.
+1. Playback pauses.
+2. Maya picks up your question in her own words ("Good question from our listener…"), Sam follows
+   up or offers an everyday example, and they talk it through in 3 to 6 short turns, in their
+   two voices, grounded in the material and aware of what they were just discussing.
+3. They lead back into the podcast, which resumes at the sentence where you interrupted.
+
+*Regular reading:* a single, direct answer, like asking a lecturer.
 1. Playback pauses.
 2. The AI answers in a natural spoken style (3 to 6 sentences) with one concrete example,
    grounded in the material and aware of where you paused.
-3. The answer is spoken and shown in the panel.
-4. Playback picks up where it left off.
+3. Reading resumes where it left off.
+
+Either way, the answer is also shown as text in the panel (for discussions, with who said what).
 
 You can also ask questions when nothing is playing.
 
@@ -211,6 +221,9 @@ Open **Statistics** near the bottom of the panel. It updates automatically.
 **Accuracy by question level**: your accuracy at each Bloom's level, split by mode, with the
 number of questions in parentheses. This shows, for example, whether podcasts help more with
 "apply" questions than with "remember" questions.
+
+**Questions you asked**: how many questions you've asked, and how many were answered as a host
+discussion versus a single answer.
 
 **Materials**: how many distinct materials you've studied, how many you've listened to in **both**
 modes, and how many you've been quizzed on after both modes. These are the fair, like-for-like

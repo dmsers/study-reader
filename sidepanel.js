@@ -9,7 +9,9 @@ const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
 const DEFAULT_OPENAI_MODEL = "gpt-6-luna";
 const DEFAULT_OPENAI_BASE = "https://api.openai.com/v1";
 // Bump a version whenever its prompt changes, so logged results can be compared fairly.
-const PROMPT_VERSIONS = { podcast: "podcast-v1", quiz: "quiz-v2", ask: "ask-v1", summary: "summary-v1" };
+const PROMPT_VERSIONS = {
+  podcast: "podcast-v1", quiz: "quiz-v2", ask: "ask-v1", askDiscussion: "ask-discussion-v1", summary: "summary-v1",
+};
 const SESSION = crypto.randomUUID(); // one per time the panel is opened
 
 let sourceText = "";   // the passage everything below works on
@@ -632,7 +634,7 @@ function speak(text, speaker) {
 }
 
 function showNow(item) {
-  const who = item.speaker === "B" ? "Sam" : lastMode === "podcast" ? "Maya" : "Reader";
+  const who = item.speaker === "B" ? "Sam" : lastMode === "podcast" || item.podcast ? "Maya" : "Reader";
   $("now").innerHTML = "";
   const b = document.createElement("span");
   b.className = "who";
@@ -1057,31 +1059,74 @@ $("playAll").onclick = () => {
 };
 
 // ---------- interrupt ----------
+// In podcast mode the hosts discuss your question together; in regular reading you get a single,
+// direct answer.
+function answerStyle() {
+  const mode = listenSession && !listenSession.ended ? listenSession.mode
+    : lastMode !== "none" ? lastMode : settings.mode;
+  return mode === "podcast" ? "discussion" : "single";
+}
+
 $("ask").onclick = async () => {
   const q = $("question").value.trim();
   if (!q) return;
   const wasActive = playing || (pos > 0 && pos < queue.length);
+  const style = answerStyle();
   pausePlayback();
-  status("Answering your question…");
+  status(style === "discussion" ? "The hosts are taking your question…" : "Answering your question…");
   $("ask").disabled = true;
   try {
     const where = queue[pos] ? queue[pos].text : "";
-    const answer = await ai(
-      "You are a patient tutor answering someone who just interrupted a lesson. " +
-      "Answer in a natural spoken style, 3 to 6 sentences, and include one concrete example. " +
-      "Ground the answer in the material; if you go beyond it, say so briefly.",
-      `Material:\n\n${sourceText}\n\n` +
-      (focus ? `They were looking for: ${focus}\n\n` : "") +
-      `We had just reached: "${where}"\n\nQuestion: ${q}`,
-      800
-    );
-    $("answer").textContent = answer;
+    const recent = queue.slice(Math.max(0, pos - 4), pos + 1)
+      .map((it) => `${it.speaker === "B" ? "Sam" : style === "discussion" ? "Maya" : "Reader"}: ${it.text}`).join("\n");
+    const context = `Material:\n\n${sourceText}\n\n` +
+      (focus ? `The listener was looking for: ${focus}\n\n` : "") +
+      (recent ? `Just before the interruption:\n${recent}\n\n` : "");
+
+    let items, transcript;
+    if (style === "discussion") {
+      const turns = await askJSON(
+        "A listener just interrupted your two-host educational podcast with a question. " +
+        "Write a short exchange of 3 to 6 turns in which the hosts discuss it together. " +
+        "Host A (Maya) explains clearly; host B (Sam) asks follow-ups and offers everyday examples. " +
+        "Maya opens by picking up the listener's question in her own words (e.g. 'Good question from our listener…'). " +
+        "Include at least one concrete example. Ground the discussion in the material; if either host goes beyond it, " +
+        "they say so briefly. Each turn one to three sentences, natural spoken style, no stage directions. " +
+        (wasActive
+          ? "End with one short line leading back to where they were in the discussion. "
+          : "End naturally; do not mention returning to an earlier discussion. ") +
+        'Output ONLY a JSON array: [{"speaker":"A","text":"..."},{"speaker":"B","text":"..."}]',
+        context + `Listener's question: ${q}`,
+        1200
+      );
+      items = turns.flatMap((t) =>
+        sentences(t.text).map((x) => ({ speaker: t.speaker === "B" ? "B" : "A", text: x, podcast: true })));
+      transcript = turns.map((t) => `${t.speaker === "B" ? "Sam" : "Maya"}: ${t.text}`).join("\n");
+    } else {
+      const answer = await ai(
+        "You are a patient tutor answering someone who just interrupted a lesson. " +
+        "Answer in a natural spoken style, 3 to 6 sentences, and include one concrete example. " +
+        "Ground the answer in the material; if you go beyond it, say so briefly.",
+        context + `We had just reached: "${where}"\n\nQuestion: ${q}`,
+        800
+      );
+      items = sentences(answer).map((x) => ({ speaker: "A", text: x }));
+      transcript = answer;
+    }
+
+    $("answer").textContent = transcript;
     $("question").value = "";
-    logEvent("question_asked", { promptVersion: PROMPT_VERSIONS.ask }, { question: q, answer });
+    logEvent("question_asked", {
+      style, turns: style === "discussion" ? transcript.split("\n").length : "",
+      promptVersion: style === "discussion" ? PROMPT_VERSIONS.askDiscussion : PROMPT_VERSIONS.ask,
+    }, { question: q, answer: transcript });
     status(wasActive ? "Answering, then picking up where we left off." : "Answering.");
-    for (const s of sentences(answer)) await speak(s, "A");
+    for (const it of items) {
+      showNow(it);
+      await speak(it.text, it.speaker);
+    }
     if (wasActive) play();
-    else status("");
+    else { status(""); $("now").textContent = ""; }
   } catch (e) {
     fail("Question failed", e);
   } finally {
@@ -1311,6 +1356,14 @@ async function renderStats() {
     quizzedBoth.get(q.materialId).add(q.mode);
   }
   const qBoth = [...quizzedBoth.values()].filter((s) => s.has("read") && s.has("podcast")).length;
+  const asked = by("question_asked");
+  if (asked.length) {
+    const hq = document.createElement("h3"); hq.textContent = "Questions you asked"; body.append(hq);
+    const qp = document.createElement("p");
+    const disc = asked.filter((e) => e.style === "discussion").length;
+    qp.textContent = `${asked.length} total · ${disc} answered as a host discussion · ${asked.length - disc} as a single answer`;
+    body.append(qp);
+  }
   const h3 = document.createElement("h3"); h3.textContent = "Materials"; body.append(h3);
   const mp = document.createElement("p");
   mp.textContent = `${num(new Set(events.filter((e) => e.materialId).map((e) => e.materialId)).size)} studied · ` +
