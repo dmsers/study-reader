@@ -11,6 +11,9 @@ It works with Claude, Gemini, or OpenAI.
 >
 > Free for personal study, research, education and other **noncommercial** use under the
 > [PolyForm Noncommercial License](LICENSE). Commercial use requires permission.
+>
+> **No support is provided.** This is a personal project shared as is. I read issues and
+> feedback and may fix things, but I can't promise answers, fixes, or updates.
 
 ## Why I built this
 
@@ -174,6 +177,10 @@ long passages are what slow the podcast down, and if so, splitting them so audio
 - Figure and diagram explanations
 - Natural cloud voices
 - Adapting presentation to what's working for each learner, based on quiz results
+
+## Credits
+
+Created by Diana (VivaLaData) with the help of [Claude](https://claude.ai), Anthropic's AI assistant.
 
 ## Third-party software
 
