@@ -5,6 +5,7 @@
   read reliably ("B", "Sam", "Host B", etc.), and a script with every line on one host alternates.
 - Settings warns when Voice 1 and Voice 2 are the same, or only one voice is installed.
 - Prompt versions bumped (podcast-v2, ask-discussion-v2) for the clearer speaker instructions.
+- Now licensed under the PolyForm Noncommercial License 1.0.0 (previously all rights reserved).
 
 ## 0.5.1
 - Interrupting in podcast mode now gets a short discussion between the two hosts (3 to 6 turns,

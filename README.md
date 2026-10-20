@@ -5,9 +5,12 @@ It reads a page aloud, or turns it into a two-host podcast discussion you can in
 questions. It also finds passages on a page by meaning and quizzes you on what you just learned.
 It works with Claude, Gemini, or OpenAI.
 
-> **Status: early prototype (v0.5.2), shared privately for feedback.** It works end to end in
-> Chrome on macOS. The quality of the AI output across subjects and models hasn't been
-> systematically tested yet; that's what testers are helping with.
+> **Status: early prototype (v0.5.2).** It works end to end in Chrome on macOS. The quality of
+> the AI output across subjects and models hasn't been systematically tested yet; feedback is
+> very welcome (see below).
+>
+> Free for personal study, research, education and other **noncommercial** use under the
+> [PolyForm Noncommercial License](LICENSE). Commercial use requires permission.
 
 ## Why I built this
 
@@ -64,9 +67,11 @@ active tab ──► content capture (all frames, incl. shadow DOM)
   copy of Mozilla pdf.js.
 - **Speech** is sentence by sentence, so pausing, interrupting and resuming are precise.
 
-## Install (for testers)
+## Install
 
-1. Download or clone this repository.
+1. Download the latest version from **[Releases](https://github.com/dmsers/study-reader/releases)**
+   (or use **Code → Download ZIP**) and unzip it somewhere permanent. Keep using that same folder
+   when you update, so your settings and usage log carry over.
 2. In Chrome, open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**,
    and choose this folder.
 3. Pin **Study Reader** and click its icon to open the side panel.
@@ -85,7 +90,8 @@ Read-aloud works without a key. The podcast, Find, questions and quizzes need on
 
 ## What I'd like feedback on
 
-Please open an issue using the **Feedback** template, or just send me notes. Most useful:
+Please [open an issue](https://github.com/dmsers/study-reader/issues/new/choose) using the
+**Feedback** template. Most useful:
 
 1. **Speed, especially the podcast:** how long until it started talking, and was that acceptable?
    The extension times every AI request. Use **Settings → Debug → Copy timings** and paste the
@@ -176,5 +182,13 @@ long passages are what slow the podcast down, and if so, splitting them so audio
 
 ## License
 
-Copyright © 2026 VivaLaData. All rights reserved. Shared privately for evaluation; see
-[LICENSE](LICENSE).
+Copyright © 2026 VivaLaData. Licensed under the
+[PolyForm Noncommercial License 1.0.0](LICENSE).
+
+In plain terms (the license itself is what counts):
+- **You may** use, study, modify and share Study Reader for any **noncommercial** purpose, including
+  personal study, research, teaching, and use by schools, nonprofits and government institutions.
+- **You may not** use it, or anything built from it, for commercial purposes without permission.
+- **If you share it**, include the license and its `Required Notice:` line.
+
+For commercial licensing, open an issue or contact VivaLaData.

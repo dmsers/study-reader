@@ -1,7 +1,7 @@
 # Study Reader: Feature Guide
 
 A complete guide to every feature in Study Reader (v0.5.2): what it does, how to use it, and
-what to expect. For installation, see the [README](README.md#install-for-testers).
+what to expect. For installation, see the [README](README.md#install).
 
 **Contents**
 
