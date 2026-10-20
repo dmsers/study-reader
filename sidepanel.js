@@ -24,6 +24,86 @@ function status(msg, isErr = false) {
   const el = $("status");
   el.textContent = msg;
   el.className = isErr ? "err" : "";
+  if (isErr) showAlert(msg);
+}
+
+// ---------- prominent error banner (top of panel) ----------
+// Errors appear in a red box at the top, with a plain-language hint, until dismissed
+// or until the next action starts.
+function showAlert(msg, hint = "") {
+  $("alertMsg").textContent = msg;
+  $("alertHint").textContent = hint;
+  $("alertHint").hidden = !hint;
+  $("alert").hidden = false;
+  $("alert").scrollIntoView({ block: "nearest" });
+}
+function clearAlert() { $("alert").hidden = true; }
+
+// Turns a raw error into a short message plus a hint about what to do.
+function explain(e) {
+  const m = String((e && e.message) || e);
+  const prov = providerName();
+  if (/PDF_PASSWORD/.test(m)) return {
+    msg: "This PDF is password-protected.",
+    hint: "Study Reader can't open protected PDFs.",
+  };
+  if (/PDF_FETCH/.test(m)) return {
+    msg: "Couldn't download the PDF" + (m.replace("PDF_FETCH", "").trim() ? ` (${m.replace("PDF_FETCH", "").trim()})` : "") + ".",
+    hint: "Make sure you're signed in to the course site, reload the page, and try again.",
+  };
+  if (/PDF_PARSE/.test(m)) return {
+    msg: "The PDF downloaded but couldn't be opened.",
+    hint: "The file may be damaged or in an unusual format.",
+  };
+  if (/TIMEOUT_CAPTURE/.test(m)) return {
+    msg: "The page didn't respond to Study Reader in time.",
+    hint: "Reload the page and try again. If it keeps happening, Settings → Debug shows how far it got.",
+  };
+  if (/TIMEOUT_AI/.test(m)) return {
+    msg: `No reply from ${prov} after 2 minutes.`,
+    hint: "Try again, try a faster model (e.g. gemini-3.5-flash-lite), or grab a smaller section of the page.",
+  };
+  if (/chrome:\/\/|chrome-extension:\/\/|Cannot access|cannot be scripted|The extensions gallery/i.test(m)) return {
+    msg: "Chrome doesn't allow extensions to read this page.",
+    hint: "This happens on Chrome's own pages, the Web Store, and some built-in viewers. Try a regular web page.",
+  };
+  if (/Failed to fetch|NetworkError|network/i.test(m)) return {
+    msg: `Couldn't reach ${prov}.`,
+    hint: "Check your internet connection and try again.",
+  };
+  if (/ 40[13]\b|API_KEY_INVALID|invalid x-api-key|authentication|permission/i.test(m)) return {
+    msg: `${prov} rejected the API key.`,
+    hint: "Re-paste the key in Settings and click Save settings.",
+  };
+  if (/ 404\b|not found|not supported for generateContent/i.test(m)) return {
+    msg: `${prov} doesn't recognize the model name "${modelName()}".`,
+    hint: "Check the spelling in Settings, or clear the field to use the default.",
+  };
+  if (/ 429\b|quota|rate limit|RESOURCE_EXHAUSTED/i.test(m)) return {
+    msg: `${prov} says you've hit a usage or rate limit.`,
+    hint: "Wait a minute and try again, or check your plan and credits.",
+  };
+  if (/ 5\d\d\b|overloaded|UNAVAILABLE/i.test(m)) return {
+    msg: `${prov} is having trouble right now.`,
+    hint: "Try again in a moment, or switch providers in Settings.",
+  };
+  return { msg: m, hint: "" };
+}
+function fail(what, e) {
+  const { msg, hint } = explain(e);
+  const el = $("status");
+  el.textContent = `${what}: ${msg}`;
+  el.className = "err";
+  showAlert(`${what}: ${msg}`, hint);
+  console.error(what, e);
+}
+
+function withTimeout(promise, ms, code) {
+  let t;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { t = setTimeout(() => reject(new Error(code)), ms); }),
+  ]).finally(() => clearTimeout(t));
 }
 function setEnabled(ids, on) { ids.forEach((id) => ($(id).disabled = !on)); }
 
@@ -145,26 +225,292 @@ function extractFromFrame(scope) {
 
   const total = (arr) => arr.reduce((s, t) => s + t.length, 0);
   const useA = a.length > 0 && total(a) >= 0.4 * total(b);
-  return { url: location.href, method: useA ? "elements" : "deep", blocks: useA ? a : b };
+  // Find the PDF file(s) this frame is showing, so the whole document can be read directly.
+  // Course-site viewers often keep only a few pages in the page at once.
+  const pdfs = new Set();
+  const isPdfUrl = (u) => /\.pdf($|[?#&])/i.test(u);
+  const add = (u) => { try { if (u) pdfs.add(new URL(u, location.href).href); } catch (e) {} };
+  try {
+    const fileParam = new URL(location.href).searchParams.get("file"); // pdf.js viewer: viewer.html?file=…
+    if (fileParam) add(fileParam);
+  } catch (e) {}
+  if (isPdfUrl(location.href) || document.contentType === "application/pdf") add(location.href);
+  const scan = (root) => {
+    for (const el of root.querySelectorAll("*")) {
+      const tag = el.tagName.toLowerCase();
+      if (tag !== "a") { // ignore ordinary links to other documents
+        for (const attr of ["src", "data", "file", "pdf-url", "data-src", "href"]) {
+          const v = el.getAttribute && el.getAttribute(attr);
+          if (v && (isPdfUrl(v) || el.getAttribute("type") === "application/pdf")) add(v);
+        }
+      }
+      if (el.shadowRoot) scan(el.shadowRoot);
+    }
+  };
+  scan(document);
+  try {
+    for (const e of performance.getEntriesByType("resource")) if (isPdfUrl(e.name)) add(e.name);
+  } catch (e) {}
+  return {
+    url: location.href, method: useA ? "elements" : "deep", blocks: useA ? a : b,
+    pdfs: Array.from(pdfs),
+  };
+}
+
+// Runs in the page's own JavaScript world. Many course sites use Mozilla's pdf.js viewer,
+// which already holds the whole document, so the text of every page can be read from it.
+async function readFromPdfJsViewer() {
+  const app = window.PDFViewerApplication;
+  if (!app || !app.pdfDocument) return null;
+  const doc = app.pdfDocument;
+  const pages = [];
+  for (let n = 1; n <= doc.numPages; n++) {
+    const tc = await (await doc.getPage(n)).getTextContent();
+    pages.push(tc.items.map((it) => (it.str || "") + (it.hasEOL ? "\n" : "")).join(""));
+  }
+  return { url: app.url || app.baseUrl || location.href, pages };
+}
+
+const looksLikePdfTab = (url = "") =>
+  /\.pdf($|[?#])/i.test(url) || url.startsWith("chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai");
+
+let pdfDoc = null;      // { url, pages: [text], source } when the current page's content is a PDF
+let blockPages = [];    // page number for each captured block (PDFs only), used to label Find results
+let pdfProblem = "";    // why a PDF on the page couldn't be read, if one was found
+
+async function targetTab() {
+  // window.__studyReaderTestTabId lets automated tests point the panel at a specific tab.
+  if (window.__studyReaderTestTabId) return chrome.tabs.get(window.__studyReaderTestTabId);
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab;
 }
 
 async function captureBlocks(scope) {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const results = await chrome.scripting.executeScript({
-    target: { tabId: tab.id, allFrames: true },
-    func: extractFromFrame,
-    args: [scope],
-  });
-  const frames = results.map((r) => r.result).filter(Boolean);
-  $("frames").textContent = frames
-    .map((f) => `${f.blocks.length} blocks (${f.method}) — ${f.url.slice(0, 120)}`)
-    .join("\n") || "(no frames returned)";
+  const tab = await targetTab();
+  if (!tab) throw new Error("No active tab found.");
+  pdfDoc = null; blockPages = []; pdfProblem = "";
+  const debug = [];
+
+  // 1. The tab itself is a PDF (Chrome's own viewer): read the file directly.
+  if (looksLikePdfTab(tab.url)) {
+    debug.push(`PDF tab — ${String(tab.url).slice(0, 120)}`);
+    try {
+      pdfDoc = { url: tab.url, pages: await readPdfFile(tab.url, null), source: "file" };
+    } catch (e) {
+      $("frames").textContent = debug.join("\n");
+      throw e;
+    }
+  }
+
+  // 2. Regular page: capture its text, and look for a PDF behind any document viewer.
+  let frames = [];
+  if (!pdfDoc) {
+    const results = await withTimeout(
+      chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        func: extractFromFrame,
+        args: [scope],
+      }),
+      10000,
+      "TIMEOUT_CAPTURE"
+    );
+    frames = results.filter((r) => r.result).map((r) => ({ ...r.result, frameId: r.frameId }));
+    for (const f of frames) {
+      debug.push(`${f.blocks.length} blocks (${f.method}) — ${f.url.slice(0, 120)}`);
+      for (const p of f.pdfs) debug.push(`  PDF found — ${p.slice(0, 120)}`);
+    }
+
+    // 2a. A pdf.js viewer already holds the whole document; ask it for every page.
+    try {
+      const viewer = await withTimeout(
+        chrome.scripting.executeScript({
+          target: { tabId: tab.id, allFrames: true },
+          world: "MAIN",
+          func: readFromPdfJsViewer,
+        }),
+        30000,
+        "TIMEOUT_CAPTURE"
+      );
+      const hit = viewer.map((r) => r.result).find((r) => r && r.pages && r.pages.length);
+      if (hit) {
+        pdfDoc = { url: hit.url, pages: hit.pages.map(cleanPdfText), source: "viewer" };
+        debug.push(`  Read ${hit.pages.length} pages from the page's PDF viewer`);
+      }
+    } catch (e) {
+      debug.push(`  (viewer check skipped: ${e.message})`);
+    }
+
+    // 2b. Otherwise download the PDF the page is showing and read it ourselves.
+    if (!pdfDoc) {
+      const candidates = [];
+      for (const f of frames) for (const url of f.pdfs) {
+        if (!candidates.some((c) => c.url === url)) candidates.push({ url, frameId: f.frameId });
+      }
+      for (const c of candidates.slice(0, 3)) {
+        try {
+          pdfDoc = { url: c.url, pages: await readPdfFile(c.url, { tabId: tab.id, frameId: c.frameId }), source: "file" };
+          debug.push(`  Read ${pdfDoc.pages.length} pages from the PDF file`);
+          break;
+        } catch (e) {
+          pdfProblem = explain(e).msg;
+          debug.push(`  Couldn't read ${c.url.slice(0, 80)}: ${e.message}`);
+        }
+      }
+    }
+  }
+  $("frames").textContent = debug.join("\n") || "(no frames returned)";
+
+  if (pdfDoc) {
+    if (!pdfDoc.pages.some((t) => t.trim())) {
+      pdfDoc = null;
+      pdfProblem = "The PDF has no text layer. It looks like scanned images, which can't be read yet.";
+    } else {
+      return pdfBlocks(1, pdfDoc.pages.length);
+    }
+  }
   const seen = new Set();
   const blocks = [];
   for (const f of frames) {
     for (const t of f.blocks) if (t && !seen.has(t)) { seen.add(t); blocks.push(t); }
   }
   return blocks;
+}
+
+// ---------- PDF reading ----------
+let pdfjsLib = null;
+async function loadPdfJs() {
+  if (!pdfjsLib) {
+    pdfjsLib = await import(chrome.runtime.getURL("lib/pdf.min.mjs"));
+    pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL("lib/pdf.worker.min.mjs");
+  }
+  return pdfjsLib;
+}
+
+// Download a PDF using your existing login. First from the panel; if the site refuses,
+// from inside the page that shows it (same origin, so the course site's cookies apply).
+async function fetchPdfBytes(url, frame) {
+  const isPdf = (b) => b.length > 4 && b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46; // %PDF
+  let why = "";
+  try {
+    const r = await fetchWithTimeout(url, { credentials: "include" }, 60000);
+    if (r.ok) {
+      const b = new Uint8Array(await r.arrayBuffer());
+      if (isPdf(b)) return b;
+      why = "the download wasn't a PDF (often a login page)";
+    } else why = `HTTP ${r.status}`;
+  } catch (e) { why = e.message; }
+
+  if (frame) {
+    const [res] = await withTimeout(
+      chrome.scripting.executeScript({
+        target: { tabId: frame.tabId, frameIds: [frame.frameId] },
+        func: async (u) => {
+          const r = await fetch(u, { credentials: "include" });
+          if (!r.ok) return { error: `HTTP ${r.status}` };
+          const bytes = new Uint8Array(await r.arrayBuffer());
+          let bin = "";
+          for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+          return { b64: btoa(bin) };
+        },
+        args: [url],
+      }),
+      60000,
+      "TIMEOUT_CAPTURE"
+    );
+    const out = res && res.result;
+    if (out && out.b64) {
+      const bin = atob(out.b64);
+      const b = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
+      if (isPdf(b)) return b;
+      why = "the download wasn't a PDF (often a login page)";
+    } else if (out && out.error) why = out.error;
+  }
+  throw new Error(`PDF_FETCH ${why}`);
+}
+
+async function readPdfFile(url, frame) {
+  const bytes = await fetchPdfBytes(url, frame);
+  const pdfjs = await loadPdfJs();
+  let doc;
+  try {
+    doc = await pdfjs.getDocument({
+      data: bytes,
+      cMapUrl: chrome.runtime.getURL("lib/cmaps/"),
+      cMapPacked: true,
+      isEvalSupported: false,
+    }).promise;
+  } catch (e) {
+    if (e && e.name === "PasswordException") throw new Error("PDF_PASSWORD");
+    throw new Error(`PDF_PARSE ${e.message}`);
+  }
+  const pages = [];
+  for (let n = 1; n <= doc.numPages; n++) {
+    status(`Reading PDF… page ${n} of ${doc.numPages}`);
+    const tc = await (await doc.getPage(n)).getTextContent();
+    pages.push(cleanPdfText(tc.items.map((it) => (it.str || "") + (it.hasEOL ? "\n" : "")).join("")));
+  }
+  doc.destroy();
+  return pages;
+}
+
+function cleanPdfText(raw) {
+  return String(raw || "")
+    .replace(/(\w)-\n(\w)/g, "$1$2")   // re-join words hyphenated across lines
+    .replace(/\s*\n\s*/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+// Split pages into passage-sized blocks (for Find), remembering each block's page number.
+function pdfBlocks(from, to) {
+  const blocks = [];
+  blockPages = [];
+  for (let n = from; n <= to; n++) {
+    const parts = pdfDoc.pages[n - 1].match(/[^.!?]+[.!?]+["')\]]*\s*|[^.!?]+$/g) || [];
+    let chunk = "";
+    for (const s of parts) {
+      chunk += s;
+      if (chunk.length >= 900) { blocks.push(chunk.trim()); blockPages.push(n); chunk = ""; }
+    }
+    if (chunk.trim()) { blocks.push(chunk.trim()); blockPages.push(n); }
+  }
+  return blocks;
+}
+
+function showPdfBar() {
+  const bar = $("pdfBar");
+  if (!pdfDoc) { bar.hidden = true; return; }
+  const n = pdfDoc.pages.length;
+  $("pdfInfo").textContent = `PDF · ${n} page${n > 1 ? "s" : ""}`;
+  $("pdfFrom").max = $("pdfTo").max = n;
+  $("pdfFrom").value = 1;
+  $("pdfTo").value = n;
+  bar.hidden = false;
+}
+function usePdfPages() {
+  const n = pdfDoc.pages.length;
+  let from = Math.min(Math.max(parseInt($("pdfFrom").value, 10) || 1, 1), n);
+  let to = Math.min(Math.max(parseInt($("pdfTo").value, 10) || n, from), n);
+  $("pdfFrom").value = from;
+  $("pdfTo").value = to;
+  const text = pdfDoc.pages.slice(from - 1, to).filter(Boolean).join("\n\n");
+  setPassage(text);
+  const pages = to - from + 1;
+  let msg = `Using pages ${from}–${to} of ${n}: ${text.length.toLocaleString()} characters.`;
+  if (settings.mode === "podcast" && pages > 8) msg += " Tip: fewer pages make the podcast start faster.";
+  status(msg);
+}
+$("pdfUse").onclick = () => { clearAlert(); if (pdfDoc) usePdfPages(); };
+
+// After a capture, explain a PDF that was found but couldn't be read.
+function pdfNotice(gotText) {
+  if (!pdfProblem) return;
+  showAlert(
+    gotText ? "Found a PDF on this page but couldn't read it, so only the page text was captured."
+            : "Found a PDF on this page but couldn't read it.",
+    pdfProblem
+  );
 }
 
 function setPassage(text, focusText = "") {
@@ -181,15 +527,21 @@ $("grab").onclick = async () => {
   status("Grabbing text…");
   try {
     const blocks = await captureBlocks($("scope").value);
+    showPdfBar();
+    if (pdfDoc) { usePdfPages(); return; }
     if (!blocks.length) {
-      status("No readable text found. Check Settings → Debug to see which frames were reached.", true);
+      if (pdfProblem) { status("No readable text found.", false); pdfNotice(false); return; }
+      fail("No readable text found", new Error("Study Reader reached the page but found no text in it."));
+      $("alertHint").textContent = "If the page shows images of text (a scan), it can't be read yet. Settings → Debug lists what was reached.";
+      $("alertHint").hidden = false;
       return;
     }
     const text = blocks.join("\n\n");
     setPassage(text);
     status(`Captured ${blocks.length} blocks, ${text.length.toLocaleString()} characters.`);
+    pdfNotice(true);
   } catch (e) {
-    status("Capture failed: " + e.message, true);
+    fail("Couldn't grab text", e);
   }
 };
 
@@ -382,10 +734,23 @@ async function askJSON(system, user, maxTokens) {
   }
 }
 
+async function fetchWithTimeout(url, opts, ms = 120000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } catch (e) {
+    if (e.name === "AbortError") throw new Error("TIMEOUT_AI");
+    throw e;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function gemini(system, user, maxTokens, json) {
   if (!settings.geminiKey) throw new Error("Add your Gemini API key under Settings.");
   const model = settings.geminiModel || DEFAULT_GEMINI_MODEL;
-  const resp = await fetch(
+  const resp = await fetchWithTimeout(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
     {
       method: "POST",
@@ -415,7 +780,7 @@ async function gemini(system, user, maxTokens, json) {
 
 async function claude(system, user, maxTokens = 2000) {
   if (!settings.apiKey) throw new Error("Add your Anthropic API key under Settings.");
-  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+  const resp = await fetchWithTimeout("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -471,7 +836,7 @@ async function startPodcast() {
     status(`Discussion ready: ${turns.length} turns in ${wait}s (${providerName()} · ${modelName()}).`);
     play();
   } catch (e) {
-    status("Podcast failed: " + e.message, true);
+    fail("Podcast failed", e);
   } finally {
     $("play").disabled = false;
   }
@@ -487,7 +852,7 @@ $("find").onclick = async () => {
   status("Reading the whole page…");
   try {
     const blocks = await captureBlocks("all");
-    if (!blocks.length) throw new Error("No readable text on this page.");
+    if (!blocks.length) { pdfNotice(false); throw new Error(pdfProblem || "No readable text on this page."); }
     let budget = 120000;
     const numbered = [];
     for (let i = 0; i < blocks.length && budget > 0; i++) {
@@ -519,7 +884,7 @@ $("find").onclick = async () => {
       ? `${matches.length} match${matches.length > 1 ? "es" : ""}. Listening uses ${settings.mode === "podcast" ? "podcast" : "regular"} mode.`
       : "Nothing on this page matches that.");
   } catch (e) {
-    status("Find failed: " + e.message, true);
+    fail("Find failed", e);
   } finally {
     $("find").disabled = false;
   }
@@ -539,7 +904,10 @@ function renderMatches() {
     label.textContent = m.label || "Match";
     const score = document.createElement("span");
     score.className = "score";
-    if (typeof m.score === "number") score.textContent = `${m.score}% match`;
+    const pages = [...new Set(m.blocks.map((i) => blockPages[i]).filter(Boolean))];
+    const pageLabel = pages.length ? ` · p. ${pages.length > 1 ? pages[0] + "–" + pages[pages.length - 1] : pages[0]}` : "";
+    if (typeof m.score === "number") score.textContent = `${m.score}% match${pageLabel}`;
+    else score.textContent = pageLabel.replace(/^ · /, "");
     head.append(label, score);
     const why = document.createElement("div");
     why.className = "why";
@@ -597,7 +965,7 @@ $("ask").onclick = async () => {
     if (wasActive) play();
     else status("");
   } catch (e) {
-    status("Question failed: " + e.message, true);
+    fail("Question failed", e);
   } finally {
     $("ask").disabled = false;
   }
@@ -663,7 +1031,7 @@ $("quiz").onclick = async () => {
     }
     status("");
   } catch (e) {
-    status("Quiz failed: " + e.message, true);
+    fail("Quiz failed", e);
   } finally {
     $("quiz").disabled = false;
   }
@@ -673,3 +1041,9 @@ $("quiz").onclick = async () => {
 loadSettings();
 chrome.storage.local.get("stats").then(({ stats }) => renderStats(stats));
 chrome.storage.local.get("timings").then(({ timings = [] }) => renderTimings(timings));
+
+// Dismiss the error banner by hand, or automatically when a new action starts.
+$("alertClose").onclick = clearAlert;
+for (const id of ["grab", "find", "playAll", "play", "resume", "ask", "quiz", "testVoices"]) {
+  $(id).addEventListener("click", clearAlert, { capture: true });
+}

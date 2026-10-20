@@ -5,7 +5,7 @@ It reads a page aloud, or turns it into a two-host podcast discussion you can in
 questions. It also finds passages on a page by meaning and quizzes you on what you just learned.
 It works with Claude or Gemini.
 
-> **Status: early prototype (v0.3.2), shared privately for feedback.** It works end to end in
+> **Status: early prototype (v0.4.0), shared privately for feedback.** It works end to end in
 > Chrome on macOS. The quality of the AI output across subjects and models hasn't been
 > systematically tested yet; that's what testers are helping with.
 
@@ -22,12 +22,15 @@ to ask "wait, what does that mean?", and checks that I actually understood.
   or a **podcast discussion** in which two AI hosts talk through the material.
 - **Interrupt anytime:** ask a question mid-playback. You get a spoken answer with an example,
   then playback resumes where it left off.
+- **Whole PDFs:** reads every page of a PDF, even when a course site's viewer only loads a few
+  pages at a time, and lets you pick a page range.
 - **Find on page:** describe what you're looking for in plain language and get ranked matching
   passages, each with a one-line reason. Listen to one match or to all of them.
 - **Quiz me:** four multiple-choice questions on the current material, with explanations.
   Scores are tallied by how you listened. That's groundwork for adapting to what works for each
   learner.
 - **Choose your AI:** switch between Claude (Anthropic) and Gemini (Google) at any time.
+- **Clear errors:** problems show in a banner at the top of the panel with what to do next.
 - **Reads modern web apps:** captures text inside iframes and web components (shadow DOM),
   which many reader and search sites use.
 
@@ -49,6 +52,9 @@ active tab ──► content capture (all frames, incl. shadow DOM)
   list items) and falls back to walking the rendered tree through shadow roots and slots.
 - **AI calls** go through one `ai()` function with an adapter per provider. Structured
   replies (scripts, quizzes, matches) are requested as JSON and retried once if malformed.
+- **PDFs** are found behind document viewers (iframe/embed/web-component sources, pdf.js
+  viewers, Chrome's PDF viewer), downloaded with the user's session, and parsed with a bundled
+  copy of Mozilla pdf.js.
 - **Speech** is sentence by sentence, so pausing, interrupting and resuming are precise.
 
 ## Install (for testers)
@@ -98,6 +104,7 @@ copyrighted textbook pages.
   would route requests through a server.
 - Built-in voices vary by computer; cloud text-to-speech isn't integrated yet.
 - Find only sees what's currently loaded on the page.
+- Scanned PDFs (images of pages, no text layer) can't be read yet.
 - Figures, diagrams and math are not interpreted yet.
 - Desktop Chrome only; phones don't support browser extensions.
 
@@ -111,6 +118,11 @@ long passages are what slow the podcast down, and if so, splitting them so audio
 - Figure and diagram explanations
 - Natural cloud voices
 - Adapting presentation to what's working for each learner, based on quiz results
+
+## Third-party software
+
+[pdf.js](https://github.com/mozilla/pdf.js) 4.10.38 by Mozilla, Apache License 2.0
+(`lib/PDFJS-LICENSE`).
 
 ## License
 

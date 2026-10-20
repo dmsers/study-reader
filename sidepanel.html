@@ -4,14 +4,24 @@
 <meta charset="utf-8">
 <title>Study Reader</title>
 <style>
-  :root { --bg:#fbfaf7; --fg:#1f2328; --muted:#6a6f76; --line:#e3e0d8; --accent:#2f6f5e; --accent-fg:#fff; --warn:#a4462f; --card:#ffffff; }
+  :root { --bg:#fbfaf7; --fg:#1f2328; --muted:#6a6f76; --line:#e3e0d8; --accent:#2f6f5e; --accent-fg:#fff; --warn:#a4462f; --card:#ffffff; --alert-bg:#fbeee9; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#1b1d1f; --fg:#e8e6e1; --muted:#9a9ea4; --line:#33363a; --accent:#5fb39b; --accent-fg:#10201b; --warn:#e08a6f; --card:#222528; }
+    :root { --bg:#1b1d1f; --fg:#e8e6e1; --muted:#9a9ea4; --line:#33363a; --accent:#5fb39b; --accent-fg:#10201b; --warn:#e08a6f; --card:#222528; --alert-bg:#3a2520; }
   }
   * { box-sizing: border-box; }
   body { margin:0; padding:14px; font:14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:var(--bg); color:var(--fg); }
   h1 { font-size:16px; margin:0 0 10px; }
   #poweredBy { font-size:12px; font-weight:400; color:var(--muted); }
+  #alert { position:sticky; top:0; z-index:5; margin:0 0 12px; border:1px solid var(--warn); border-left-width:4px;
+           border-radius:8px; padding:10px; background:var(--alert-bg); }
+  #alert[hidden] { display:none; }
+  .alertHead { display:flex; gap:10px; align-items:flex-start; }
+  .alertIcon { flex:none; width:20px; height:20px; border-radius:50%; background:var(--warn); color:var(--bg);
+               font-weight:700; font-size:13px; display:grid; place-items:center; }
+  .alertBody { flex:1; min-width:0; }
+  #alertMsg { font-weight:600; color:var(--fg); }
+  #alertHint { font-size:13px; color:var(--fg); opacity:.85; margin-top:4px; }
+  #alertClose { flex:none; border:none; padding:2px 6px; }
   h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:18px 0 6px; }
   .row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:6px; }
   button { font:inherit; padding:6px 10px; border-radius:6px; border:1px solid var(--line); background:transparent; color:var(--fg); cursor:pointer; }
@@ -39,10 +49,25 @@
   details { margin-top:16px; }
   label { display:block; font-size:12px; color:var(--muted); margin-top:6px; }
   #stats { font-size:12px; color:var(--muted); }
+  #pdfBar { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:6px 8px; }
+  #pdfBar[hidden] { display:none; }
+  #pdfBar input { width:4.2em; }
+  label.inline { display:inline-flex; align-items:center; gap:4px; margin:0; font-size:13px; color:var(--fg); }
 </style>
 </head>
 <body>
   <h1>Study Reader <span id="poweredBy"></span></h1>
+
+  <div id="alert" role="alert" hidden>
+    <div class="alertHead">
+      <span class="alertIcon" aria-hidden="true">!</span>
+      <div class="alertBody">
+        <div id="alertMsg"></div>
+        <div id="alertHint" hidden></div>
+      </div>
+      <button id="alertClose" class="small" aria-label="Dismiss">✕</button>
+    </div>
+  </div>
 
   <h2>Listening mode</h2>
   <select id="mode">
@@ -57,6 +82,12 @@
       <option value="all">Whole loaded page</option>
     </select>
     <button id="grab" class="primary">Grab text</button>
+  </div>
+  <div id="pdfBar" class="row" hidden>
+    <strong id="pdfInfo"></strong>
+    <label class="inline">pages <input id="pdfFrom" type="number" min="1" value="1"></label>
+    <label class="inline">to <input id="pdfTo" type="number" min="1" value="1"></label>
+    <button id="pdfUse" class="small">Use these pages</button>
   </div>
   <div id="preview" hidden></div>
 

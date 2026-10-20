@@ -16,6 +16,13 @@ Development checks and next steps. Tester-facing information lives in the README
 - [ ] Compare models on the same passages: gemini-3.8-flash vs. gemini-3.5-flash-lite vs.
   claude-sonnet-5-5, for both speed and script quality.
 
+## PDFs
+
+- [ ] Test with real course PDFs on the actual course site; note which viewer it uses
+      (Settings → Debug shows how the PDF was found and read).
+- [ ] Scanned PDFs: add text recognition (OCR) for pages without a text layer.
+- [ ] For long PDFs, consider suggesting a page range before generating a podcast.
+
 ## Quality
 
 - [ ] Test podcast accuracy and usefulness across subjects (sciences, humanities, math-heavy).
