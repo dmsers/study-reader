@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Study Reader</title>
+<style>
+  :root { --bg:#fbfaf7; --fg:#1f2328; --muted:#6a6f76; --line:#e3e0d8; --accent:#2f6f5e; --accent-fg:#fff; --warn:#a4462f; --card:#ffffff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1b1d1f; --fg:#e8e6e1; --muted:#9a9ea4; --line:#33363a; --accent:#5fb39b; --accent-fg:#10201b; --warn:#e08a6f; --card:#222528; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:14px; font:14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:var(--bg); color:var(--fg); }
+  h1 { font-size:16px; margin:0 0 10px; }
+  #poweredBy { font-size:12px; font-weight:400; color:var(--muted); }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:18px 0 6px; }
+  .row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:6px; }
+  button { font:inherit; padding:6px 10px; border-radius:6px; border:1px solid var(--line); background:transparent; color:var(--fg); cursor:pointer; }
+  button.primary { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
+  button.small { padding:3px 8px; font-size:12px; }
+  button:disabled { opacity:.45; cursor:default; }
+  select, input, textarea { font:inherit; color:var(--fg); background:transparent; border:1px solid var(--line); border-radius:6px; padding:5px 7px; }
+  textarea { width:100%; resize:vertical; }
+  #status { color:var(--muted); font-size:12px; min-height:1.4em; margin-top:10px; }
+  #status.err { color:var(--warn); }
+  #now { border-left:3px solid var(--accent); padding:4px 8px; margin-top:8px; min-height:1.4em; }
+  #now .who { font-weight:600; }
+  #preview, #frames { font-size:12px; color:var(--muted); white-space:pre-wrap; max-height:120px; overflow:auto; border:1px solid var(--line); border-radius:6px; padding:6px; margin-top:6px; }
+  #answer { margin-top:8px; white-space:pre-wrap; }
+  .result { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:8px; margin:8px 0; }
+  .result .label { font-weight:600; }
+  .result .score { font-size:11px; color:var(--muted); margin-left:6px; }
+  .result .why { font-size:13px; margin-top:2px; }
+  .result .snip { font-size:12px; color:var(--muted); margin-top:4px; }
+  .q { border:1px solid var(--line); border-radius:8px; padding:8px; margin:8px 0; }
+  .q button { display:block; width:100%; text-align:left; margin:4px 0; }
+  .q .why { font-size:12px; color:var(--muted); margin-top:4px; }
+  .right { border-color:var(--accent) !important; }
+  .wrong { border-color:var(--warn) !important; }
+  details { margin-top:16px; }
+  label { display:block; font-size:12px; color:var(--muted); margin-top:6px; }
+  #stats { font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+  <h1>Study Reader <span id="poweredBy"></span></h1>
+
+  <h2>Listening mode</h2>
+  <select id="mode">
+    <option value="read">Regular reading</option>
+    <option value="podcast">Podcast discussion</option>
+  </select>
+
+  <h2>1 · Capture this page</h2>
+  <div class="row">
+    <select id="scope">
+      <option value="visible">What's on screen</option>
+      <option value="all">Whole loaded page</option>
+    </select>
+    <button id="grab" class="primary">Grab text</button>
+  </div>
+  <div id="preview" hidden></div>
+
+  <h2>…or find something on it</h2>
+  <textarea id="findQuery" rows="2" placeholder="Describe what you're looking for, e.g. &quot;systems that pick a teaching mode based on quiz scores&quot;"></textarea>
+  <div class="row"><button id="find" class="primary">Find on page</button>
+    <button id="playAll" hidden>Listen to all matches</button></div>
+  <div id="results"></div>
+
+  <h2>2 · Listen</h2>
+  <div class="row">
+    <button id="play" disabled>Play</button>
+    <button id="pause" disabled>Pause</button>
+    <button id="resume" disabled>Resume</button>
+  </div>
+  <div id="now"></div>
+
+  <h2>3 · Interrupt</h2>
+  <textarea id="question" rows="2" placeholder="Ask for an example, a simpler explanation, how this connects to…"></textarea>
+  <div class="row"><button id="ask" disabled>Ask (pauses playback)</button></div>
+  <div id="answer"></div>
+
+  <h2>4 · Check understanding</h2>
+  <div class="row"><button id="quiz" disabled>Quiz me</button></div>
+  <div id="quizArea"></div>
+  <div id="stats"></div>
+
+  <div id="status"></div>
+
+  <details>
+    <summary>Settings</summary>
+    <label>AI provider
+      <select id="provider" style="width:100%">
+        <option value="claude">Claude (Anthropic)</option>
+        <option value="gemini">Gemini (Google)</option>
+      </select>
+    </label>
+    <div data-provider="claude">
+      <label>Anthropic API key (stored only in this browser)
+        <input id="apiKey" type="password" style="width:100%">
+      </label>
+      <label>Claude model
+        <input id="model" style="width:100%">
+      </label>
+    </div>
+    <div data-provider="gemini" hidden>
+      <label>Gemini API key, from aistudio.google.com (stored only in this browser)
+        <input id="geminiKey" type="password" style="width:100%">
+      </label>
+      <label>Gemini model
+        <input id="geminiModel" style="width:100%">
+      </label>
+    </div>
+    <label>Voice 1 (reader, and Maya in podcasts)
+      <select id="voiceA" style="width:100%"></select>
+    </label>
+    <label>Voice 2 (Sam in podcasts)
+      <select id="voiceB" style="width:100%"></select>
+    </label>
+    <label>Speech rate
+      <input id="rate" type="range" min="0.7" max="1.6" step="0.05">
+    </label>
+    <div class="row"><button id="save">Save settings</button><button id="testVoices">Test voices</button></div>
+    <h2>Debug: frames found</h2>
+    <div id="frames">(grab or find first)</div>
+  </details>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

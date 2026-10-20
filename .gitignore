@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+
+# Packaged builds
+*.zip
+*.crx
+*.pem
+
+# Local notes and secrets (never commit API keys)
+.env
+*.local
+secrets*
