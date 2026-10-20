@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.0
+- OpenAI provider, plus any OpenAI-compatible server (OpenRouter, Groq, local Ollama/LM Studio)
+  via an editable server address. Default model gpt-6-luna.
+- Token counts (input, output, reasoning) recorded for every AI request, for all providers.
+- Local usage log (IndexedDB): captures, listening sessions (mode and how much was heard),
+  podcasts, questions, quizzes and every quiz answer (question level, time to answer), and all
+  AI requests. Each studied text gets a fingerprint ID, so podcast and regular reading can be
+  compared on the same material.
+- Statistics section: listens, quizzes and accuracy by study mode; accuracy by question level;
+  materials studied in both modes; AI calls, speed and tokens by provider and model.
+- Verbose logging: also stores the actual quiz questions/answers, podcast scripts, your questions,
+  and an AI "target summary" of each material.
+- Export the log as CSV (events) or JSON (events, materials, prompt versions); clear the log.
+- Quizzes label each question with its Bloom's level (remember, understand, apply, analyze).
+- Prompt versions are recorded with results, so changes to prompts don't muddy comparisons.
+
 ## 0.4.0
 - Reads whole PDFs: finds the PDF behind course-site document viewers (including viewers that
   keep only a few pages loaded), PDFs in Chrome's own viewer, and pdf.js viewers, then extracts

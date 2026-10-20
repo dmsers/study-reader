@@ -23,6 +23,17 @@ Development checks and next steps. Tester-facing information lives in the README
 - [ ] Scanned PDFs: add text recognition (OCR) for pages without a text layer.
 - [ ] For long PDFs, consider suggesting a page range before generating a podcast.
 
+## Learning research (usage log)
+
+- [ ] Delayed retest: re-quiz the same material a few days later to measure retention, not
+      just immediate recall.
+- [ ] Confidence rating before each answer reveals (to separate guessing from knowing).
+- [ ] Study-plan mode that randomly assigns podcast or regular reading to each new material
+      (removes self-selection bias) and alternates which mode comes first.
+- [ ] Question consistency: generate several quizzes for the same material and compare overlap
+      and level mix, per mode and per model.
+- [ ] Analysis notebook (Python or R) that reads the CSV/JSON export.
+
 ## Quality
 
 - [ ] Test podcast accuracy and usefulness across subjects (sciences, humanities, math-heavy).

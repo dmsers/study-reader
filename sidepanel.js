@@ -1,11 +1,16 @@
-// Study Reader prototype v0.2 — side panel logic.
-// Capture text from every frame of the active tab (including shadow DOM), or find passages
-// that match a description, then play them as plain reading or a two-host discussion,
-// with interrupt-to-ask and quizzes.
+// Study Reader — side panel logic.
+// Capture text from the active tab (including shadow DOM, iframes and whole PDFs), or find
+// passages that match a description, then play them as plain reading or a two-host discussion,
+// with interrupt-to-ask and quizzes. Usage is logged locally (log.js) for the Statistics view.
 
 const $ = (id) => document.getElementById(id);
 const DEFAULT_MODEL = "claude-sonnet-5-5";
 const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
+const DEFAULT_OPENAI_MODEL = "gpt-6-luna";
+const DEFAULT_OPENAI_BASE = "https://api.openai.com/v1";
+// Bump a version whenever its prompt changes, so logged results can be compared fairly.
+const PROMPT_VERSIONS = { podcast: "podcast-v1", quiz: "quiz-v2", ask: "ask-v1", summary: "summary-v1" };
+const SESSION = crypto.randomUUID(); // one per time the panel is opened
 
 let sourceText = "";   // the passage everything below works on
 let focus = "";        // what the user was looking for, when the passage came from Find
@@ -16,7 +21,8 @@ let lastMode = "none"; // how the current passage was last listened to (for quiz
 let settings = {
   provider: "claude", apiKey: "", model: DEFAULT_MODEL,
   geminiKey: "", geminiModel: DEFAULT_GEMINI_MODEL,
-  rate: 1.0, mode: "read", voiceA: "", voiceB: "",
+  openaiKey: "", openaiModel: DEFAULT_OPENAI_MODEL, openaiBase: DEFAULT_OPENAI_BASE,
+  rate: 1.0, mode: "read", voiceA: "", voiceB: "", verbose: false,
 };
 let found = { blocks: [], matches: [], query: "" };
 
@@ -61,7 +67,7 @@ function explain(e) {
   };
   if (/TIMEOUT_AI/.test(m)) return {
     msg: `No reply from ${prov} after 2 minutes.`,
-    hint: "Try again, try a faster model (e.g. gemini-3.5-flash-lite), or grab a smaller section of the page.",
+    hint: "Try again, try a faster model (e.g. gemini-3.5-flash-lite or gpt-6-luna), or use a smaller section or page range.",
   };
   if (/chrome:\/\/|chrome-extension:\/\/|Cannot access|cannot be scripted|The extensions gallery/i.test(m)) return {
     msg: "Chrome doesn't allow extensions to read this page.",
@@ -71,7 +77,7 @@ function explain(e) {
     msg: `Couldn't reach ${prov}.`,
     hint: "Check your internet connection and try again.",
   };
-  if (/ 40[13]\b|API_KEY_INVALID|invalid x-api-key|authentication|permission/i.test(m)) return {
+  if (/ 40[13]\b|API_KEY_INVALID|invalid x-api-key|Incorrect API key|authentication|permission/i.test(m)) return {
     msg: `${prov} rejected the API key.`,
     hint: "Re-paste the key in Settings and click Save settings.",
   };
@@ -116,6 +122,10 @@ async function loadSettings() {
   $("model").value = settings.model;
   $("geminiKey").value = settings.geminiKey;
   $("geminiModel").value = settings.geminiModel;
+  $("openaiKey").value = settings.openaiKey;
+  $("openaiModel").value = settings.openaiModel;
+  $("openaiBase").value = settings.openaiBase;
+  $("verbose").checked = !!settings.verbose;
   $("rate").value = settings.rate;
   $("mode").value = settings.mode;
   applyProvider();
@@ -127,6 +137,9 @@ $("save").onclick = async () => {
   settings.model = $("model").value.trim() || DEFAULT_MODEL;
   settings.geminiKey = $("geminiKey").value.trim();
   settings.geminiModel = $("geminiModel").value.trim() || DEFAULT_GEMINI_MODEL;
+  settings.openaiKey = $("openaiKey").value.trim();
+  settings.openaiModel = $("openaiModel").value.trim() || DEFAULT_OPENAI_MODEL;
+  settings.openaiBase = $("openaiBase").value.trim() || DEFAULT_OPENAI_BASE;
   settings.rate = parseFloat($("rate").value) || 1.0;
   settings.voiceA = $("voiceA").value;
   settings.voiceB = $("voiceB").value;
@@ -135,7 +148,13 @@ $("save").onclick = async () => {
   status("Settings saved.");
 };
 
-function providerName() { return settings.provider === "gemini" ? "Gemini" : "Claude"; }
+function providerName() {
+  if (settings.provider === "gemini") return "Gemini";
+  if (settings.provider === "openai") {
+    return /api\.openai\.com/.test(settings.openaiBase || DEFAULT_OPENAI_BASE) ? "OpenAI" : "OpenAI-compatible";
+  }
+  return "Claude";
+}
 function applyProvider() {
   document.querySelectorAll("[data-provider]").forEach((el) => {
     el.hidden = el.dataset.provider !== settings.provider;
@@ -277,6 +296,7 @@ const looksLikePdfTab = (url = "") =>
 let pdfDoc = null;      // { url, pages: [text], source } when the current page's content is a PDF
 let blockPages = [];    // page number for each captured block (PDFs only), used to label Find results
 let pdfProblem = "";    // why a PDF on the page couldn't be read, if one was found
+let lastTab = { title: "", url: "" }; // page the last capture came from
 
 async function targetTab() {
   // window.__studyReaderTestTabId lets automated tests point the panel at a specific tab.
@@ -289,6 +309,7 @@ async function captureBlocks(scope) {
   const tab = await targetTab();
   if (!tab) throw new Error("No active tab found.");
   pdfDoc = null; blockPages = []; pdfProblem = "";
+  lastTab = { title: tab.title || "", url: tab.url || "" };
   const debug = [];
 
   // 1. The tab itself is a PDF (Chrome's own viewer): read the file directly.
@@ -495,7 +516,7 @@ function usePdfPages() {
   $("pdfFrom").value = from;
   $("pdfTo").value = to;
   const text = pdfDoc.pages.slice(from - 1, to).filter(Boolean).join("\n\n");
-  setPassage(text);
+  setPassage(text, "", { title: lastTab.title || pdfDoc.url, url: pdfDoc.url, pages: `${from}-${to}`, source: "pdf-" + pdfDoc.source });
   const pages = to - from + 1;
   let msg = `Using pages ${from}–${to} of ${n}: ${text.length.toLocaleString()} characters.`;
   if (settings.mode === "podcast" && pages > 8) msg += " Tip: fewer pages make the podcast start faster.";
@@ -513,11 +534,12 @@ function pdfNotice(gotText) {
   );
 }
 
-function setPassage(text, focusText = "") {
+function setPassage(text, focusText = "", meta = {}) {
   stopPlayback();
   sourceText = text;
   focus = focusText;
   lastMode = "none";
+  material = startMaterial(text, meta);
   $("preview").hidden = false;
   $("preview").textContent = text.slice(0, 1200) + (text.length > 1200 ? " …" : "");
   setEnabled(["play", "ask", "quiz"], true);
@@ -537,7 +559,7 @@ $("grab").onclick = async () => {
       return;
     }
     const text = blocks.join("\n\n");
-    setPassage(text);
+    setPassage(text, "", { title: lastTab.title, url: lastTab.url, source: "page", blocks: blocks.length });
     status(`Captured ${blocks.length} blocks, ${text.length.toLocaleString()} characters.`);
     pdfNotice(true);
   } catch (e) {
@@ -624,12 +646,17 @@ async function play() {
   setEnabled(["pause"], true);
   setEnabled(["resume"], false);
   while (playing && pos < queue.length) {
+    if (listenSession) listenSession.played = Math.max(listenSession.played, pos + 1);
     showNow(queue[pos]);
     await speak(queue[pos].text, queue[pos].speaker);
     if (!playing) break; // paused mid-sentence: replay this sentence on resume
     pos++;
   }
-  if (pos >= queue.length && queue.length) { $("now").textContent = "Done."; setEnabled(["resume"], false); }
+  if (pos >= queue.length && queue.length) {
+    $("now").textContent = "Done.";
+    setEnabled(["resume"], false);
+    endListenSession();
+  }
   playing = false;
   setEnabled(["pause"], false);
 }
@@ -639,7 +666,29 @@ function pausePlayback() {
   setEnabled(["pause"], false);
   setEnabled(["resume"], pos < queue.length);
 }
-function stopPlayback() { pausePlayback(); queue = []; pos = 0; setEnabled(["resume"], false); }
+function stopPlayback() {
+  pausePlayback();
+  endListenSession();
+  queue = []; pos = 0;
+  setEnabled(["resume"], false);
+}
+
+// One "listening session" = one play-through of the current material in one mode.
+let listenSession = null;
+function beginListenSession(mode) {
+  listenSession = { mode, played: 0, total: queue.length, ended: false };
+  logEvent("listen_start", { mode, items: queue.length });
+}
+function listenFraction() {
+  return listenSession && listenSession.total ? Math.round((100 * listenSession.played) / listenSession.total) / 100 : 0;
+}
+function endListenSession() {
+  if (!listenSession || listenSession.ended) return;
+  listenSession.ended = true;
+  logEvent("listen_end", {
+    mode: listenSession.mode, items: listenSession.total, played: listenSession.played, fraction: listenFraction(),
+  });
+}
 
 $("pause").onclick = pausePlayback;
 $("resume").onclick = play;
@@ -654,60 +703,69 @@ async function startListening() {
 function startRead() {
   lastMode = "read";
   queue = sentences(sourceText.replace(/\n\n/g, " ")).map((t) => ({ speaker: "A", text: t }));
+  beginListenSession("read");
+  ensureSummary();
   play();
 }
 
 // ---------- AI providers ----------
-// Every feature calls ai() or askJSON(); adding a provider means adding one function here.
-async function ai(system, user, maxTokens = 2000, json = false) {
-  // Running timer on the status line, so a slow model looks busy rather than frozen.
+// Every feature calls ai() or askJSON(). Each provider returns { text, usage }, where usage holds
+// token counts as reported by the provider. Every call is logged as an "ai_call" event.
+async function ai(system, user, maxTokens = 2000, json = false, opts = {}) {
+  const quiet = !!opts.quiet; // background calls (e.g. material summaries) don't touch the status line
   const base = $("status").textContent.replace(/ \([^()]*\d+s\)$/, "");
+  const task = opts.task || base.replace(/…$/, "").trim() || "AI request";
   const started = Date.now();
   const tick = () => {
     const secs = Math.round((Date.now() - started) / 1000);
     status(`${base} (${providerName()}, ${secs}s)`);
   };
-  tick();
-  const timer = setInterval(tick, 1000);
-  let ok = false;
+  let timer = null;
+  if (!quiet) { tick(); timer = setInterval(tick, 1000); }
+  let ok = false, usage = {}, error = "";
   try {
-    const out = settings.provider === "gemini"
-      ? await gemini(system, user, maxTokens, json)
-      : await claude(system, user, maxTokens);
+    const call = settings.provider === "gemini" ? gemini : settings.provider === "openai" ? openai : claude;
+    const out = await call(system, user, maxTokens, json);
     ok = true;
-    return out;
+    usage = out.usage || {};
+    return out.text;
+  } catch (e) {
+    error = String(e.message || e).slice(0, 200);
+    throw e;
   } finally {
-    clearInterval(timer);
-    logTiming(base.replace(/…$/, "").trim() || "AI request", (Date.now() - started) / 1000, ok, user.length);
+    if (timer) clearInterval(timer);
+    logEvent("ai_call", {
+      task, ok, error, secs: Math.round((Date.now() - started) / 100) / 10, inputChars: user.length,
+      inputTokens: usage.input ?? "", outputTokens: usage.output ?? "",
+      reasoningTokens: usage.reasoning ?? "", totalTokens: usage.total ?? "",
+    }).then(renderTimings);
   }
 }
 
-// ---------- timing log (Settings → Debug), for speed feedback ----------
 function modelName() {
-  return settings.provider === "gemini"
-    ? settings.geminiModel || DEFAULT_GEMINI_MODEL
-    : settings.model || DEFAULT_MODEL;
+  if (settings.provider === "gemini") return settings.geminiModel || DEFAULT_GEMINI_MODEL;
+  if (settings.provider === "openai") return settings.openaiModel || DEFAULT_OPENAI_MODEL;
+  return settings.model || DEFAULT_MODEL;
 }
-async function logTiming(task, secs, ok, inputChars) {
-  const entry = {
-    at: new Date().toISOString(), task, provider: providerName(), model: modelName(),
-    secs: Math.round(secs * 10) / 10, ok, inputChars,
-  };
-  const { timings = [] } = await chrome.storage.local.get("timings");
-  timings.unshift(entry);
-  timings.length = Math.min(timings.length, 30);
-  await chrome.storage.local.set({ timings });
-  renderTimings(timings);
-}
-function renderTimings(timings) {
-  $("timings").textContent = timings.length
-    ? timings.map((t) => {
-        const d = new Date(t.at);
-        const when = `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
-        return `${when}  ${t.provider} ${t.model}  ${t.task}: ${t.secs}s${t.ok ? "" : " (failed)"}` +
-          `  [${t.inputChars.toLocaleString()} chars in]`;
-      }).join("\n")
-    : "(none yet)";
+
+// ---------- recent AI timings (Settings → Debug), from the usage log ----------
+async function renderTimings() {
+  try {
+    const calls = (await SRLog.events()).filter((e) => e.type === "ai_call").slice(-30).reverse();
+    $("timings").textContent = calls.length
+      ? calls.map((t) => {
+          const d = new Date(t.ts);
+          const when = `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+          const tok = t.totalTokens !== "" && t.totalTokens !== undefined
+            ? `  ${Number(t.inputTokens || 0).toLocaleString()} in / ${Number(t.outputTokens || 0).toLocaleString()} out tokens`
+            : "";
+          return `${when}  ${t.provider} ${t.model}  ${t.task}: ${t.secs}s${t.ok ? "" : " (failed)"}` +
+            `  [${Number(t.inputChars || 0).toLocaleString()} chars in]${tok}`;
+        }).join("\n")
+      : "(none yet)";
+  } catch (e) {
+    $("timings").textContent = "(log unavailable)";
+  }
 }
 $("copyTimings").onclick = async () => {
   try {
@@ -719,16 +777,16 @@ $("copyTimings").onclick = async () => {
 };
 
 // Asks for a JSON array; if the reply doesn't parse, asks once more.
-async function askJSON(system, user, maxTokens) {
+async function askJSON(system, user, maxTokens, opts = {}) {
   const task = $("status").textContent.replace(/ \([^()]*\d+s\)$/, "").replace(/…$/, "");
-  const raw = await ai(system, user, maxTokens, true);
+  const raw = await ai(system, user, maxTokens, true, opts);
   try {
     return parseJSONArray(raw);
   } catch {
-    status(`${task}, retrying…`);
+    if (!opts.quiet) status(`${task}, retrying…`);
     const retry = await ai(
       system + " Your previous reply was not valid JSON. Reply with the JSON array only, nothing else.",
-      user, maxTokens, true
+      user, maxTokens, true, opts
     );
     return parseJSONArray(retry);
   }
@@ -775,7 +833,14 @@ async function gemini(system, user, maxTokens, json) {
     const why = (cand && cand.finishReason) || (data.promptFeedback && data.promptFeedback.blockReason) || "empty reply";
     throw new Error(`Gemini returned no text (${why}).`);
   }
-  return text;
+  const u = data.usageMetadata || {};
+  return {
+    text,
+    usage: {
+      input: u.promptTokenCount, output: u.candidatesTokenCount,
+      reasoning: u.thoughtsTokenCount, total: u.totalTokenCount,
+    },
+  };
 }
 
 async function claude(system, user, maxTokens = 2000) {
@@ -789,7 +854,7 @@ async function claude(system, user, maxTokens = 2000) {
       "anthropic-dangerous-direct-browser-access": "true",
     },
     body: JSON.stringify({
-      model: settings.model,
+      model: settings.model || DEFAULT_MODEL,
       max_tokens: maxTokens,
       system,
       messages: [{ role: "user", content: user }],
@@ -797,7 +862,53 @@ async function claude(system, user, maxTokens = 2000) {
   });
   if (!resp.ok) throw new Error(`API ${resp.status}: ${(await resp.text()).slice(0, 300)}`);
   const data = await resp.json();
-  return data.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
+  const u = data.usage || {};
+  return {
+    text: data.content.filter((b) => b.type === "text").map((b) => b.text).join("\n"),
+    usage: {
+      input: u.input_tokens, output: u.output_tokens,
+      total: (u.input_tokens || 0) + (u.output_tokens || 0),
+    },
+  };
+}
+
+// OpenAI, or any server that speaks OpenAI's Chat Completions format (OpenRouter, Groq,
+// a local Ollama or LM Studio, …): change the server address in Settings.
+async function openai(system, user, maxTokens, json) {
+  const base = (settings.openaiBase || DEFAULT_OPENAI_BASE).replace(/\/+$/, "");
+  const official = /api\.openai\.com/.test(base);
+  if (official && !settings.openaiKey) throw new Error("Add your OpenAI API key under Settings.");
+  const body = {
+    model: settings.openaiModel || DEFAULT_OPENAI_MODEL,
+    messages: [{ role: "system", content: system }, { role: "user", content: user }],
+  };
+  // OpenAI's newer models take max_completion_tokens (which also covers reasoning);
+  // most compatible servers still expect max_tokens.
+  if (official) body.max_completion_tokens = Math.max(maxTokens * 4, 8192);
+  else body.max_tokens = Math.max(maxTokens * 2, 4096);
+  const headers = { "content-type": "application/json" };
+  if (settings.openaiKey) headers.authorization = `Bearer ${settings.openaiKey}`;
+  const resp = await fetchWithTimeout(`${base}/chat/completions`, {
+    method: "POST", headers, body: JSON.stringify(body),
+  });
+  if (!resp.ok) throw new Error(`OpenAI ${resp.status}: ${(await resp.text()).slice(0, 300)}`);
+  const data = await resp.json();
+  const msg = data.choices && data.choices[0] && data.choices[0].message;
+  const text = (msg && (typeof msg.content === "string" ? msg.content
+    : Array.isArray(msg.content) ? msg.content.map((c) => c.text || "").join("") : "")) || "";
+  if (!text) {
+    const why = (data.choices && data.choices[0] && data.choices[0].finish_reason) || (msg && msg.refusal) || "empty reply";
+    throw new Error(`OpenAI returned no text (${why}).`);
+  }
+  const u = data.usage || {};
+  return {
+    text,
+    usage: {
+      input: u.prompt_tokens, output: u.completion_tokens,
+      reasoning: u.completion_tokens_details && u.completion_tokens_details.reasoning_tokens,
+      total: u.total_tokens,
+    },
+  };
 }
 
 function parseJSONArray(raw) {
@@ -833,6 +944,11 @@ async function startPodcast() {
       sentences(t.text).map((s) => ({ speaker: t.speaker === "B" ? "B" : "A", text: s }))
     );
     const wait = Math.round((Date.now() - t0) / 100) / 10;
+    logEvent("podcast_generated",
+      { mode: "podcast", promptVersion: PROMPT_VERSIONS.podcast, turns: turns.length, secs: wait },
+      { script: turns });
+    beginListenSession("podcast");
+    ensureSummary();
     status(`Discussion ready: ${turns.length} turns in ${wait}s (${providerName()} · ${modelName()}).`);
     play();
   } catch (e) {
@@ -921,11 +1037,12 @@ function renderMatches() {
     const listen = document.createElement("button");
     listen.className = "small primary";
     listen.textContent = "Listen";
-    listen.onclick = () => { setPassage(t, found.query); startListening(); };
+    const meta = { title: `${lastTab.title} — ${m.label || "match"}`, url: lastTab.url, source: "find" };
+    listen.onclick = () => { setPassage(t, found.query, meta); startListening(); };
     const use = document.createElement("button");
     use.className = "small";
     use.textContent = "Use for questions & quiz";
-    use.onclick = () => { setPassage(t, found.query); status(`Passage set: ${m.label || "match"}.`); };
+    use.onclick = () => { setPassage(t, found.query, meta); status(`Passage set: ${m.label || "match"}.`); };
     row.append(listen, use);
     card.append(head, why, snip, row);
     box.append(card);
@@ -935,7 +1052,7 @@ function renderMatches() {
 
 $("playAll").onclick = () => {
   const all = found.matches.map((m) => `${m.label || "Match"}:\n${matchText(m)}`).join("\n\n---\n\n");
-  setPassage(all, found.query);
+  setPassage(all, found.query, { title: `${lastTab.title} — all matches for "${found.query}"`, url: lastTab.url, source: "find" });
   startListening();
 };
 
@@ -960,6 +1077,7 @@ $("ask").onclick = async () => {
     );
     $("answer").textContent = answer;
     $("question").value = "";
+    logEvent("question_asked", { promptVersion: PROMPT_VERSIONS.ask }, { question: q, answer });
     status(wasActive ? "Answering, then picking up where we left off." : "Answering.");
     for (const s of sentences(answer)) await speak(s, "A");
     if (wasActive) play();
@@ -971,23 +1089,8 @@ $("ask").onclick = async () => {
   }
 };
 
-// ---------- quiz + simple stats ----------
-async function recordResult(correct) {
-  const { stats = {} } = await chrome.storage.local.get("stats");
-  const s = stats[lastMode] || { right: 0, total: 0 };
-  s.total++;
-  if (correct) s.right++;
-  stats[lastMode] = s;
-  await chrome.storage.local.set({ stats });
-  renderStats(stats);
-}
-function renderStats(stats) {
-  const label = { read: "after regular reading", podcast: "after podcast", none: "without listening" };
-  const lines = Object.entries(stats || {}).map(
-    ([m, s]) => `${label[m] || m}: ${s.right}/${s.total} (${Math.round((100 * s.right) / s.total)}%)`
-  );
-  $("stats").textContent = lines.length ? "Quiz results " + lines.join(" · ") : "";
-}
+// ---------- quiz ----------
+const LEVELS = ["remember", "understand", "apply", "analyze"];
 
 $("quiz").onclick = async () => {
   pausePlayback();
@@ -997,18 +1100,33 @@ $("quiz").onclick = async () => {
   try {
     const qs = await askJSON(
       "Write multiple-choice questions that check understanding of the material, not trivia recall. " +
-      "Use plausible wrong answers. " +
-      'Output ONLY a JSON array: [{"q":"...","options":["...","...","...","..."],"answer":0,"why":"..."}] ' +
+      "Use plausible wrong answers. Label each question with the thinking it requires, using one of: " +
+      "remember, understand, apply, analyze (Bloom's taxonomy). " +
+      'Output ONLY a JSON array: [{"q":"...","options":["...","...","...","..."],"answer":0,"why":"...","level":"understand"}] ' +
       "where answer is the index of the correct option.",
       "Write 4 questions for this material:\n\n" + sourceText,
       1500
     );
-    for (const item of qs) {
+    // Results count toward the mode used to study this material, and how much of it was heard.
+    const quizMode = lastMode;
+    const heard = listenSession && listenSession.mode === quizMode ? listenFraction() : 0;
+    const quizId = crypto.randomUUID().slice(0, 8);
+    const shownAt = Date.now();
+    logEvent("quiz_generated", {
+      mode: quizMode, promptVersion: PROMPT_VERSIONS.quiz, quizId, questions: qs.length, listenFraction: heard,
+    }, { quiz: qs });
+    ensureSummary();
+
+    qs.forEach((item, qi) => {
+      const level = LEVELS.includes(String(item.level).toLowerCase()) ? String(item.level).toLowerCase() : "unlabeled";
       const box = document.createElement("div");
       box.className = "q";
       const p = document.createElement("div");
       p.textContent = item.q;
-      box.append(p);
+      const tag = document.createElement("div");
+      tag.className = "level";
+      tag.textContent = level === "unlabeled" ? "" : `Level: ${level}`;
+      box.append(p, tag);
       const why = document.createElement("div");
       why.className = "why";
       item.options.forEach((opt, i) => {
@@ -1022,13 +1140,17 @@ $("quiz").onclick = async () => {
           });
           if (!ok) b.classList.add("wrong");
           why.textContent = (ok ? "Correct. " : "Not quite. ") + item.why;
-          recordResult(ok);
+          logEvent("quiz_answer",
+            { mode: quizMode, quizId, q: qi + 1, level, correct: ok, msToAnswer: Date.now() - shownAt,
+              listenFraction: heard, promptVersion: PROMPT_VERSIONS.quiz },
+            { question: item.q, options: item.options, chosen: opt,
+              correctAnswer: item.options[item.answer], explanation: item.why });
         };
         box.append(b);
       });
       box.append(why);
       $("quizArea").append(box);
-    }
+    });
     status("");
   } catch (e) {
     fail("Quiz failed", e);
@@ -1037,10 +1159,241 @@ $("quiz").onclick = async () => {
   }
 };
 
+// ---------- usage log: materials and events ----------
+// A "material" is the exact text being studied. Its ID is a fingerprint of the text, so the same
+// pages studied in podcast mode and in regular mode share an ID and can be compared.
+let material = null; // { ready: Promise<{id,title,url,pages,chars,source}> }
+
+async function fingerprint(text) {
+  const norm = text.toLowerCase().replace(/\s+/g, " ").trim();
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(norm));
+  return Array.from(new Uint8Array(buf)).slice(0, 6).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function startMaterial(text, meta = {}) {
+  const ready = (async () => {
+    const m = {
+      id: await fingerprint(text),
+      title: (meta.title || "").slice(0, 200), url: meta.url || "", pages: meta.pages || "",
+      chars: text.length, source: meta.source || "",
+    };
+    try {
+      const known = await SRLog.getMaterial(m.id);
+      if (!known) await SRLog.putMaterial({ ...m, firstSeen: new Date().toISOString(), summary: "" });
+    } catch (e) {}
+    logEvent("capture", { source: m.source, blocks: meta.blocks || "" }, null, m);
+    return m;
+  })();
+  return { ready, text, summarizing: false };
+}
+
+async function logEvent(type, fields = {}, verboseFields = null, knownMaterial = null) {
+  try {
+    const m = knownMaterial || (material ? await material.ready : null);
+    const ev = {
+      ts: new Date().toISOString(), session: SESSION, type,
+      provider: providerName(), model: modelName(), mode: lastMode,
+      materialId: m ? m.id : "", materialTitle: m ? m.title : "", materialUrl: m ? m.url : "",
+      pages: m ? m.pages : "", chars: m ? m.chars : "",
+      verbose: !!settings.verbose,
+      ...fields,
+    };
+    if (settings.verbose && verboseFields) Object.assign(ev, verboseFields);
+    await SRLog.add(ev);
+    scheduleStats();
+  } catch (e) {
+    console.warn("Study Reader: couldn't write to the usage log", e);
+  }
+}
+
+// Verbose mode: a short "target summary" of each new material, so logs show exactly what was
+// studied. Generated once per material, in the background (one extra AI request).
+async function ensureSummary() {
+  if (!settings.verbose || !material || material.summarizing) return;
+  const mat = material;
+  mat.summarizing = true;
+  try {
+    const m = await mat.ready;
+    const stored = await SRLog.getMaterial(m.id);
+    if (stored && stored.summary) return;
+    const summary = await ai(
+      "Summarize study material for a research log. Two sentences on what it covers, then " +
+      "'Key concepts:' followed by 3 to 6 comma-separated concepts. Plain text only.",
+      mat.text.slice(0, 60000), 400, false, { quiet: true, task: "Summarizing material" }
+    );
+    await SRLog.putMaterial({ ...(stored || m), summary });
+    logEvent("material_summary", { promptVersion: PROMPT_VERSIONS.summary }, { summary }, m);
+  } catch (e) {
+    console.warn("Study Reader: material summary failed", e);
+    mat.summarizing = false; // allow a retry later
+  }
+}
+
+// ---------- statistics ----------
+let statsTimer = null;
+function scheduleStats() {
+  clearTimeout(statsTimer);
+  statsTimer = setTimeout(renderStats, 300);
+}
+
+const MODE_LABEL = { read: "Regular reading", podcast: "Podcast", none: "Without listening" };
+const pct = (a, b) => (b ? `${Math.round((100 * a) / b)}%` : "—");
+const num = (n) => Number(n || 0).toLocaleString();
+
+function table(headers, rows) {
+  const wrap = document.createElement("div");
+  wrap.className = "tableWrap"; // scrolls sideways if the panel is narrow
+  const t = document.createElement("table");
+  wrap.append(t);
+  const tr = document.createElement("tr");
+  for (const h of headers) { const th = document.createElement("th"); th.textContent = h; tr.append(th); }
+  t.append(tr);
+  for (const r of rows) {
+    const row = document.createElement("tr");
+    for (const c of r) { const td = document.createElement("td"); td.textContent = c; row.append(td); }
+    t.append(row);
+  }
+  return wrap;
+}
+
+async function renderStats() {
+  let events = [];
+  try { events = await SRLog.events(); } catch (e) { $("statsBody").textContent = "Usage log unavailable."; return; }
+  const by = (type) => events.filter((e) => e.type === type);
+  const modes = ["read", "podcast", "none"];
+  const body = $("statsBody");
+  body.innerHTML = "";
+
+  if (!events.length) { body.textContent = "Nothing logged yet. Listen to something or take a quiz."; quickStats([]); return; }
+
+  const first = new Date(events[0].ts).toLocaleDateString();
+  const intro = document.createElement("p");
+  intro.className = "muted";
+  intro.textContent = `${num(events.length)} events since ${first}` +
+    (events.some((e) => e.verbose) ? ` · ${num(events.filter((e) => e.verbose).length)} with verbose detail` : "");
+  body.append(intro);
+
+  // Listening and quizzes by mode
+  const starts = by("listen_start"), ends = by("listen_end"), quizzes = by("quiz_generated"), answers = by("quiz_answer");
+  const h1 = document.createElement("h3"); h1.textContent = "By study mode"; body.append(h1);
+  body.append(table(["Mode", "Listens", "Avg heard", "Quizzes", "Correct", "Accuracy"], modes.map((m) => {
+    const e = ends.filter((x) => x.mode === m);
+    const avg = e.length ? pct(e.reduce((a, x) => a + (Number(x.fraction) || 0), 0), e.length) : "—";
+    const a = answers.filter((x) => x.mode === m);
+    const right = a.filter((x) => x.correct).length;
+    return [MODE_LABEL[m], m === "none" ? "—" : num(starts.filter((x) => x.mode === m).length),
+      m === "none" ? "—" : avg, num(quizzes.filter((x) => x.mode === m).length),
+      `${right}/${a.length}`, pct(right, a.length)];
+  })));
+
+  // Accuracy by question level
+  const levels = [...LEVELS, "unlabeled"].filter((l) => answers.some((a) => a.level === l));
+  if (levels.length) {
+    const h2 = document.createElement("h3"); h2.textContent = "Accuracy by question level"; body.append(h2);
+    body.append(table(["Level", "Regular", "Podcast", "None"], levels.map((l) => [l, ...modes.map((m) => {
+      const a = answers.filter((x) => x.level === l && x.mode === m);
+      return a.length ? `${pct(a.filter((x) => x.correct).length, a.length)} (${a.length})` : "—";
+    })])));
+  }
+
+  // Same material in both modes
+  const matModes = new Map();
+  for (const e of starts) {
+    if (!e.materialId) continue;
+    if (!matModes.has(e.materialId)) matModes.set(e.materialId, new Set());
+    matModes.get(e.materialId).add(e.mode);
+  }
+  const both = [...matModes.values()].filter((s) => s.has("read") && s.has("podcast")).length;
+  const quizzedBoth = new Map();
+  for (const q of quizzes) {
+    if (!q.materialId) continue;
+    if (!quizzedBoth.has(q.materialId)) quizzedBoth.set(q.materialId, new Set());
+    quizzedBoth.get(q.materialId).add(q.mode);
+  }
+  const qBoth = [...quizzedBoth.values()].filter((s) => s.has("read") && s.has("podcast")).length;
+  const h3 = document.createElement("h3"); h3.textContent = "Materials"; body.append(h3);
+  const mp = document.createElement("p");
+  mp.textContent = `${num(new Set(events.filter((e) => e.materialId).map((e) => e.materialId)).size)} studied · ` +
+    `${both} listened to in both modes · ${qBoth} quizzed after both modes`;
+  body.append(mp);
+
+  // AI usage
+  const calls = by("ai_call");
+  if (calls.length) {
+    const groups = new Map();
+    for (const c of calls) {
+      const k = `${c.provider}\n${String(c.model).replace(/-/g, "\u2011")}`; // keep model names on one line
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(c);
+    }
+    const h4 = document.createElement("h3"); h4.textContent = "AI usage (tokens)"; body.append(h4);
+    body.append(table(["Provider / model", "Calls", "Secs", "In", "Out", "Thinking"],
+      [...groups.entries()].map(([k, cs]) => {
+        const sum = (f) => cs.reduce((a, c) => a + (Number(c[f]) || 0), 0);
+        const failed = cs.filter((c) => !c.ok).length;
+        return [k, `${cs.length}${failed ? ` (${failed} failed)` : ""}`,
+          (sum("secs") / cs.length).toFixed(1), num(sum("inputTokens")), num(sum("outputTokens")), num(sum("reasoningTokens"))];
+      })));
+  }
+  quickStats(answers);
+}
+
+// One-line summary under the quiz.
+function quickStats(answers) {
+  const parts = ["read", "podcast", "none"].map((m) => {
+    const a = answers.filter((x) => x.mode === m);
+    return a.length ? `${MODE_LABEL[m].toLowerCase()}: ${a.filter((x) => x.correct).length}/${a.length}` : "";
+  }).filter(Boolean);
+  $("stats").textContent = parts.length ? "Quiz results — " + parts.join(" · ") : "";
+}
+
+// ---------- export, verbose toggle, clear ----------
+const today = () => new Date().toISOString().slice(0, 10);
+$("exportCsv").onclick = async () => {
+  try {
+    const events = await SRLog.events();
+    srDownload(`study-reader-log-${today()}.csv`, srToCSV(events), "text/csv");
+    status(`Exported ${events.length} events.`);
+  } catch (e) { fail("Export failed", e); }
+};
+$("exportJson").onclick = async () => {
+  try {
+    const [events, materials] = await Promise.all([SRLog.events(), SRLog.materials()]);
+    const doc = {
+      exportedAt: new Date().toISOString(), extensionVersion: chrome.runtime.getManifest().version,
+      promptVersions: PROMPT_VERSIONS, materials, events,
+    };
+    srDownload(`study-reader-log-${today()}.json`, JSON.stringify(doc, null, 2), "application/json");
+    status(`Exported ${events.length} events and ${materials.length} materials.`);
+  } catch (e) { fail("Export failed", e); }
+};
+$("verbose").onchange = () => {
+  settings.verbose = $("verbose").checked;
+  chrome.storage.local.set({ verbose: settings.verbose });
+  status(settings.verbose ? "Verbose logging on." : "Verbose logging off.");
+};
+let clearArmed = false;
+$("clearLog").onclick = async () => {
+  if (!clearArmed) {
+    clearArmed = true;
+    $("clearLog").textContent = "Click again to erase the whole log";
+    setTimeout(() => { clearArmed = false; $("clearLog").textContent = "Clear log…"; }, 5000);
+    return;
+  }
+  clearArmed = false;
+  $("clearLog").textContent = "Clear log…";
+  try {
+    await SRLog.clear();
+    status("Usage log cleared.");
+    renderStats();
+    renderTimings();
+  } catch (e) { fail("Couldn't clear the log", e); }
+};
+
 // ---------- init ----------
 loadSettings();
-chrome.storage.local.get("stats").then(({ stats }) => renderStats(stats));
-chrome.storage.local.get("timings").then(({ timings = [] }) => renderTimings(timings));
+renderStats();
+renderTimings();
 
 // Dismiss the error banner by hand, or automatically when a new action starts.
 $("alertClose").onclick = clearAlert;

@@ -3,9 +3,9 @@
 **An AI study companion that works with whatever you're reading in the browser.**
 It reads a page aloud, or turns it into a two-host podcast discussion you can interrupt with
 questions. It also finds passages on a page by meaning and quizzes you on what you just learned.
-It works with Claude or Gemini.
+It works with Claude, Gemini, or OpenAI.
 
-> **Status: early prototype (v0.4.0), shared privately for feedback.** It works end to end in
+> **Status: early prototype (v0.5.0), shared privately for feedback.** It works end to end in
 > Chrome on macOS. The quality of the AI output across subjects and models hasn't been
 > systematically tested yet; that's what testers are helping with.
 
@@ -29,7 +29,11 @@ to ask "wait, what does that mean?", and checks that I actually understood.
 - **Quiz me:** four multiple-choice questions on the current material, with explanations.
   Scores are tallied by how you listened. That's groundwork for adapting to what works for each
   learner.
-- **Choose your AI:** switch between Claude (Anthropic) and Gemini (Google) at any time.
+- **Choose your AI:** switch between Claude (Anthropic), Gemini (Google), and OpenAI (or any
+  OpenAI-compatible server) at any time.
+- **Statistics and usage log:** see how often you study by podcast vs. regular reading, quiz
+  accuracy for each, results by question level, and AI usage in tokens. Export everything as
+  CSV or JSON for your own analysis.
 - **Clear errors:** problems show in a banner at the top of the panel with what to do next.
 - **Reads modern web apps:** captures text inside iframes and web components (shadow DOM),
   which many reader and search sites use.
@@ -68,6 +72,8 @@ active tab ──► content capture (all frames, incl. shadow DOM)
      Default model `gemini-3.8-flash`; `gemini-3.5-flash-lite` is faster and cheaper.
    - **Claude:** key from [console.anthropic.com](https://console.anthropic.com).
      Default model `claude-sonnet-5-5`.
+   - **OpenAI:** key from [platform.openai.com](https://platform.openai.com).
+     Default model `gpt-6-luna`. For an OpenAI-compatible service, change the server address.
 5. Pick two voices and click **Test voices**. On a Mac, the natural-sounding voices are free
    downloads: System Settings → Accessibility → Spoken Content → System Voice → Manage Voices
    (look for *Premium* or *Enhanced*).
@@ -91,12 +97,52 @@ Please open an issue using the **Feedback** template, or just send me notes. Mos
 Please use material you're allowed to share when reporting problems: no screenshots of
 copyrighted textbook pages.
 
+## Usage log and statistics
+
+Everything is stored locally in the browser (IndexedDB) and never sent anywhere unless you
+export it. Open **Statistics** in the panel to see summaries, export, or clear the log.
+
+**Verbose logging** (a checkbox in Statistics) additionally stores the content: quiz questions,
+options, your answers, podcast scripts, your questions and the answers, and a two-sentence
+"target summary" of each material (one extra AI request per new material).
+
+**Materials.** Each studied text gets a `materialId`: a fingerprint of the exact text. Grabbing
+the same page or PDF page range again gives the same ID, so you can compare podcast and regular
+reading on identical material.
+
+### Export columns (CSV)
+
+| Column | Meaning |
+|---|---|
+| `ts`, `session` | Time (UTC) and an ID for each time the panel was opened |
+| `type` | `capture`, `listen_start`, `listen_end`, `podcast_generated`, `question_asked`, `quiz_generated`, `quiz_answer`, `ai_call`, `material_summary` |
+| `provider`, `model` | AI in use at the time |
+| `mode` | Study mode: `read` (regular), `podcast`, or `none` (quizzed without listening) |
+| `materialId`, `materialTitle`, `materialUrl`, `pages`, `chars` | What was studied |
+| `verbose` | Whether verbose logging was on |
+| `items`, `played`, `fraction` | Listening: sentences in total, sentences heard, share heard |
+| `quizId`, `questions`, `q` | Quiz identity, number of questions, question number |
+| `level`, `correct`, `msToAnswer` | Bloom's level, whether answered correctly, ms from quiz shown to answer |
+| `listenFraction` | Share of the material heard in that mode before the quiz |
+| `promptVersion` | Version of the prompt that produced the podcast, quiz, or answer |
+| `task`, `secs`, `ok`, `error` | AI requests: what, how long, success, error text |
+| `inputChars`, `inputTokens`, `outputTokens`, `reasoningTokens`, `totalTokens` | AI request size and tokens as reported by the provider |
+| `question`, `options`, `chosen`, `correctAnswer`, `explanation` | Verbose only: quiz content |
+| `answer`, `script`, `quiz`, `summary` | Verbose only: your question's answer, podcast script, full quiz, material summary |
+
+The JSON export also contains the materials table (with summaries) and the current prompt versions.
+
+**Research tip:** if you study the same material in both modes, the second time will usually score
+better just from repetition. Alternate which mode comes first, or compare on different but similar
+materials.
+
 ## Privacy
 
 - Your API key is stored only in your browser's extension storage.
 - Captured text is sent only to the AI provider you choose, under your key. Nothing is sent
   anywhere else.
-- Only settings and quiz tallies are saved locally.
+- Settings and the usage log are saved locally; the log leaves your computer only if you export it.
+- Exports never include API keys.
 
 ## Known limitations
 

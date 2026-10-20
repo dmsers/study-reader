@@ -52,6 +52,21 @@
   #pdfBar { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:6px 8px; }
   #pdfBar[hidden] { display:none; }
   #pdfBar input { width:4.2em; }
+  .statsBody { font-size:13px; margin-top:8px; }
+  .statsBody h3 { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:12px 0 4px; }
+  .statsBody table { width:100%; border-collapse:collapse; font-size:12px; }
+  .statsBody th, .statsBody td { text-align:left; padding:3px 4px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .statsBody th { color:var(--muted); font-weight:600; }
+  .statsBody td:not(:first-child), .statsBody th:not(:first-child) { text-align:right; white-space:nowrap; }
+  .statsBody p { margin:4px 0; }
+  .statsBody td:first-child { white-space:pre-line; }
+  .tableWrap { overflow-x:auto; }
+  .muted, .note { color:var(--muted); font-size:12px; }
+  .note { margin:2px 0 4px 22px; }
+  label.check { display:flex; align-items:center; gap:6px; color:var(--fg); font-size:13px; margin-top:12px; }
+  button.danger { color:var(--warn); border-color:var(--warn); }
+  .q .level { font-size:11px; color:var(--muted); margin:2px 0 4px; text-transform:capitalize; }
+  details > summary { cursor:pointer; font-weight:600; }
   label.inline { display:inline-flex; align-items:center; gap:4px; margin:0; font-size:13px; color:var(--fg); }
 </style>
 </head>
@@ -117,12 +132,28 @@
 
   <div id="status"></div>
 
+  <details id="statsPanel">
+    <summary>Statistics</summary>
+    <div id="statsBody" class="statsBody">(loading…)</div>
+    <label class="check"><input id="verbose" type="checkbox"> Verbose logging</label>
+    <div class="note">Also saves the actual quiz questions and answers, podcast scripts, your questions,
+      and a short AI summary of each material, so you can tell whether podcast and regular reading
+      were compared on the same material. Stored only on this computer. Summaries use one extra
+      AI request per new material.</div>
+    <div class="row">
+      <button id="exportCsv">Export log (CSV)</button>
+      <button id="exportJson">Export everything (JSON)</button>
+    </div>
+    <div class="row"><button id="clearLog" class="danger">Clear log…</button></div>
+  </details>
+
   <details>
     <summary>Settings</summary>
     <label>AI provider
       <select id="provider" style="width:100%">
         <option value="claude">Claude (Anthropic)</option>
         <option value="gemini">Gemini (Google)</option>
+        <option value="openai">OpenAI (or compatible)</option>
       </select>
     </label>
     <div data-provider="claude">
@@ -139,6 +170,17 @@
       </label>
       <label>Gemini model
         <input id="geminiModel" style="width:100%">
+      </label>
+    </div>
+    <div data-provider="openai" hidden>
+      <label>OpenAI API key, from platform.openai.com (stored only in this browser)
+        <input id="openaiKey" type="password" style="width:100%">
+      </label>
+      <label>OpenAI model
+        <input id="openaiModel" style="width:100%">
+      </label>
+      <label>Server address (change only for OpenAI-compatible services such as OpenRouter, Groq, or a local Ollama)
+        <input id="openaiBase" style="width:100%">
       </label>
     </div>
     <label>Voice 1 (reader, and Maya in podcasts)
@@ -158,6 +200,7 @@
     <div class="row"><button id="copyTimings">Copy timings</button></div>
   </details>
 
+  <script src="log.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>
