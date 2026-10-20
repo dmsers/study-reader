@@ -18,6 +18,8 @@ to ask "wait, what does that mean?", and checks that I actually understood.
 
 ## Features
 
+For step-by-step instructions on every feature, see the **[Feature Guide](FEATURES.md)**.
+
 - **Two ways to listen:** plain read-aloud using the computer's built-in voices (free, local),
   or a **podcast discussion** in which two AI hosts talk through the material.
 - **Interrupt anytime:** ask a question mid-playback. You get a spoken answer with an example,
@@ -46,7 +48,7 @@ active tab ──► content capture (all frames, incl. shadow DOM)
                      ▼
               current passage ──► read aloud (Web Speech API)
                      │
-                     ├──► AI provider (Claude or Gemini) ──► podcast script / answers / quiz / find
+                     ├──► AI provider (Claude, Gemini, OpenAI) ──► podcast / answers / quiz / find
                      │                                         │
                      └────────────── speech, two voices ◄──────┘
 ```
@@ -91,8 +93,8 @@ Please open an issue using the **Feedback** template, or just send me notes. Mos
 3. **Usefulness:** did the podcast help you understand, or was it filler?
 4. **Quizzes:** did they test understanding, or just recall?
 5. **Sites:** which pages worked or failed to capture? (Settings → Debug shows what was found.)
-6. **Claude vs. Gemini:** if you tried both, which was faster, which was better, and is the
-   trade-off worth it?
+6. **Comparing AIs:** if you tried more than one provider, which was faster, which was better,
+   and is the trade-off worth it? (Statistics → AI usage shows speed and tokens for each.)
 
 Please use material you're allowed to share when reporting problems: no screenshots of
 copyrighted textbook pages.
